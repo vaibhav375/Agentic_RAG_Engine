@@ -13,14 +13,14 @@
 ## Ablation table
 | Configuration | Hallu.↓ | Faith.↑ | Ans.F1↑ | Rec@k↑ | MRR↑ | CiteP↑ | Abst.OK↑ | AdvRobust↑ | OverAbst↓ | p95 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.310 |
-| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.640 |
-| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.840 |
+| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.360 |
+| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.610 |
+| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.860 |
 | + Contextual chunk enrichment | 0.306 | 0.742 | 0.331 | 1.000 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.820 |
-| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.570 |
-| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.290 |
-| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.420 |
-| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.440 |
+| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.420 |
+| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.130 |
+| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.320 |
+| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.480 |
 
 _Arrows show the desired direction. Each row adds one component to the row above._
 
@@ -65,6 +65,6 @@ The critic is validated against a 16-example human-labeled set of (context, clai
 
 - Metrics are computed against a hand-built gold set with easy, multi-hop, and unanswerable questions; context precision/recall are document-level (robust to chunking changes, which are an ablation variable).
 - Faithfulness/hallucination use a claim-level critic (LLM-as-judge cross-checked by an NLI entailment model) to reduce single-judge bias.
-- In `mock` mode every backend is deterministic, so CI reproduces these exact numbers; switch `mode` to `local`/`api` in `config.yaml` for real models.
+- In `mock` mode every backend is deterministic, so CI reproduces these exact numbers; switch `mode` to `local`/`api` in `config.yaml` for real models. Determinism is platform-independent: ranking rounds scores before sorting and breaks ties on chunk index, because numpy's `argpartition`/`argsort` are unstable and were reordering tied results differently on macOS vs. Linux (verified — the CI gate diffs a locally-generated baseline against a Linux runner and reports zero delta on every metric).
 - Mock embeddings are lexical (hashed bag-of-words), so dense and sparse retrieval carry similar signal and the hybrid/rerank precision lift is muted here; with real neural embeddings (bge/e5) and a cross-encoder reranker the retrieval-quality gains in those rows are substantially larger. The self-correction, CRAG abstention, and robustness effects are model-agnostic and hold in both modes.
 - HyDE and multi-hop decomposition are implemented and config-gated but not shown as ablation rows: on this small corpus retrieval recall@k already saturates at 1.0, so they are no-ops here by construction. Their benefit shows on larger corpora / at low k with neural embeddings (measured via recall@1 and MRR).
