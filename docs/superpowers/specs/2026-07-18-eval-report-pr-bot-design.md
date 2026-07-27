@@ -131,15 +131,24 @@ def evaluate_gate(summary, baseline, budgets, tolerance) -> tuple[bool, list[Met
 ### 3.3 Trend persistence (`history.jsonl` across ephemeral runners)
 
 `registry.record_run` already appends every run to `eval/results/history.jsonl`.
-CI runners are ephemeral, so the workflow persists it as an artifact:
+CI runners are ephemeral, so the workflow carries it between runs:
 
-1. `actions/download-artifact` (`eval-history`, `continue-on-error: true`) restores
-   prior history into `eval/results/` before the eval step.
+1. `actions/cache` restores prior history into `eval/results/` before the eval step
+   (`key: eval-history-<run_id>`, `restore-keys: eval-history-`).
 2. Eval appends this run's line (existing behavior).
-3. `actions/upload-artifact` re-uploads `eval-history`.
+3. The cache's post-step saves it under this run's unique key.
 
-First run (no prior artifact) → trend shows "first recorded run." No commit to the
+First run (no prior cache) → trend shows "first recorded run." No commit to the
 repo is required for the trend.
+
+> **Revised during implementation.** This section originally specified
+> `download-artifact`/`upload-artifact`. That does not work:
+> `actions/download-artifact@v4` only resolves artifacts within the *current*
+> run, so every run restored nothing and the trend was permanently stuck at
+> "first recorded run" (observed on PR #1). `actions/cache` is the first-party
+> mechanism for carrying a file *between* runs, and its restore-keys fall back to
+> the default branch's cache, which is what makes PR runs show main's trend.
+> History is still uploaded inside the `eval-dashboard` artifact for download.
 
 ### 3.4 README badge (self-updating, dependency-free)
 
