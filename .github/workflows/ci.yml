@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Re-run the gate on demand (e.g. to refresh the badge after a config change).
+  workflow_dispatch:
 
 jobs:
   test-and-eval:
