@@ -263,11 +263,13 @@ All six criteria exercised against `vaibhav375/Agentic_RAG_Engine` (private).
    `answer_correctness` to 0.900 produced a 🔴 FAILED header, ❌ on that row
    only (the other 8 stayed ✅), and a red `test-and-eval` check. Reverting
    flipped the same comment to 🟢.
-3. **Badge** — partially: `badge.json` is generated and committed correctly
-   (`0.0%`, brightgreen), and the badge job correctly skips the commit when the
-   value is unchanged. The shields.io image itself cannot render while the repo
-   is private — shields fetches `raw.githubusercontent.com` anonymously. It will
-   render as-is the moment the repo goes public.
+3. **Badge** — ✅ after a follow-up fix (PR #2). Originally partial: `badge.json`
+   was generated and committed correctly, but the shields.io image cannot render
+   while the repo is private, because shields fetches
+   `raw.githubusercontent.com` anonymously. The gate now also emits a
+   self-contained `badge.svg` that the README links by relative path, which
+   GitHub serves itself — so it renders under either visibility. The shields
+   endpoint stays documented for public forks.
 4. **Trend across runs** — ✅ after the §3.3 fix, run #5 restored the prior
    run's history and rendered `last 2 recorded runs`. See the revision note in
    §3.3: the artifact-based design in the original spec could never have worked.
@@ -279,7 +281,12 @@ Deviations from the design: the badge is written by `ci_gate --badge PATH`
 rather than a separate script, so the badge job reuses one eval run; and §3.3's
 artifact mechanism was replaced by `actions/cache` (see the note there).
 
-One caveat worth recording: `mrr` came out 0.912 locally (macOS) vs. 0.913 on
-the Linux runner. Mock mode is deterministic *per platform*, not bit-identical
-across them — well inside the 0.05 tolerance, but the "CI reproduces these exact
-numbers" claim in `RESULTS.md` should be read as ±0.001 cross-platform.
+A caveat found here turned out to be a genuine bug, fixed in PR #2: `mrr` came
+out 0.912 locally (macOS) vs. 0.913 on the Linux runner. Root cause was not
+float noise per se but `np.argpartition`/`np.argsort` being *unstable* sorts —
+with lexical mock embeddings and BM25 zeros, ties are the norm, so tie order
+followed the numpy build. Ranking now rounds before sorting and breaks ties on
+chunk index. Parity verified: PR #2's gate diffed a macOS-generated baseline
+against the Linux runner and reported +0.000 on all nine metrics, `mrr`
+included. `RESULTS.md`'s reproducibility claim is now literally true rather
+than approximately true.

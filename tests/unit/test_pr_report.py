@@ -3,8 +3,15 @@
 All pure functions — no eval run, no network — so they stay fast and CI-safe.
 """
 
-from eval.ci_gate import MetricRow, evaluate_gate
-from eval.pr_report import MARKER, render_comment, render_trend, sparkline
+from eval.ci_gate import MetricRow, evaluate_gate, write_badges
+from eval.pr_report import (
+    MARKER,
+    badge_color,
+    badge_svg,
+    render_comment,
+    render_trend,
+    sparkline,
+)
 
 BUDGETS = {"max_hallucination": 0.15, "min_correct_abstention": 0.5}
 
@@ -170,6 +177,40 @@ def test_render_trend_truncates_to_last_n_runs():
     line = next(ln for ln in out.splitlines() if ln.startswith("hallucination_rate"))
     assert "0.120 → 0.190" in line          # last 8 of 20
     assert len(line.split()[2]) == 8        # sparkline width == run count
+
+
+# --------------------------------------------------------------------- badge
+
+
+def test_badge_color_thresholds():
+    assert badge_color(0.0) == badge_color(0.05)          # green up to 5%
+    assert badge_color(0.06) != badge_color(0.0)          # yellow band
+    assert badge_color(0.40) not in (badge_color(0.0), badge_color(0.06))
+
+
+def test_badge_svg_is_self_contained_and_labelled():
+    svg = badge_svg(0.0)
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert "0.0%" in svg and "hallucination" in svg
+    # No external fetches — the point of committing it instead of using shields.
+    assert "http://" not in svg.replace("http://www.w3.org/2000/svg", "")
+    assert "https://" not in svg
+
+
+def test_badge_svg_recolors_with_the_metric():
+    assert badge_color(0.0) in badge_svg(0.0)
+    assert badge_color(0.4) in badge_svg(0.4)
+    assert badge_svg(0.0) != badge_svg(0.4)
+
+
+def test_write_badges_emits_both_forms(tmp_path):
+    import json as _json
+
+    written = write_badges(0.0, tmp_path / "badge.json")
+    assert [p.name for p in written] == ["badge.json", "badge.svg"]
+    payload = _json.loads((tmp_path / "badge.json").read_text())
+    assert payload["schemaVersion"] == 1 and payload["message"] == "0.0%"
+    assert (tmp_path / "badge.svg").read_text().startswith("<svg")
 
 
 def test_metric_row_ok_property():

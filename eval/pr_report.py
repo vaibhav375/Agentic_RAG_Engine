@@ -54,6 +54,49 @@ def sparkline(values: list[float]) -> str:
                    for v in vals)
 
 
+def badge_color(hallucination: float) -> str:
+    pct = hallucination * 100
+    return "#4c1" if pct <= 5 else ("#dfb317" if pct <= 15 else "#e05d44")
+
+
+def badge_svg(hallucination: float, label: str = "hallucination") -> str:
+    """A self-contained flat badge, committed to the repo and linked relatively
+    from the README.
+
+    Why not only the shields.io endpoint: shields fetches raw.githubusercontent
+    anonymously, so an endpoint badge renders as a broken image for as long as
+    the repo is private. A committed SVG referenced by relative path is served
+    by GitHub itself, so it works in both visibility states with no external
+    dependency at all.
+    """
+    value = f"{hallucination * 100:.1f}%"
+    # ~6.2px per char at 11px DejaVu Sans, plus 10px padding each side.
+    lw = int(len(label) * 6.2) + 20
+    vw = int(len(value) * 6.6) + 20
+    total = lw + vw
+    color = badge_color(hallucination)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{total}" height="20" '
+        f'role="img" aria-label="{label}: {value}">'
+        f"<title>{label}: {value}</title>"
+        '<linearGradient id="s" x2="0" y2="100%">'
+        '<stop offset="0" stop-color="#bbb" stop-opacity=".1"/>'
+        '<stop offset="1" stop-opacity=".1"/></linearGradient>'
+        f'<clipPath id="r"><rect width="{total}" height="20" rx="3" fill="#fff"/></clipPath>'
+        '<g clip-path="url(#r)">'
+        f'<rect width="{lw}" height="20" fill="#555"/>'
+        f'<rect x="{lw}" width="{vw}" height="20" fill="{color}"/>'
+        f'<rect width="{total}" height="20" fill="url(#s)"/></g>'
+        '<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" '
+        'font-size="11">'
+        f'<text x="{lw / 2:.0f}" y="15" fill="#010101" fill-opacity=".3">{label}</text>'
+        f'<text x="{lw / 2:.0f}" y="14">{label}</text>'
+        f'<text x="{lw + vw / 2:.0f}" y="15" fill="#010101" fill-opacity=".3">{value}</text>'
+        f'<text x="{lw + vw / 2:.0f}" y="14">{value}</text>'
+        "</g></svg>\n"
+    )
+
+
 def render_metric_table(rows: list[MetricRow], tolerance: float, has_baseline: bool) -> str:
     """Per-metric baseline → current table with direction glyphs and pass flags."""
     if not has_baseline:

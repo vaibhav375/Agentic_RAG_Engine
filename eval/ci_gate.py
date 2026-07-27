@@ -132,6 +132,20 @@ def _badge_payload(hallucination: float) -> dict:
     }
 
 
+def write_badges(hallucination: float, json_path: str | Path) -> list[Path]:
+    """Write both badge forms next to each other: the shields.io endpoint JSON
+    (for public repos) and a self-contained SVG the README links relatively
+    (works while the repo is private, since GitHub serves it itself)."""
+    from eval.pr_report import badge_svg
+
+    json_path = Path(json_path)
+    svg_path = json_path.with_suffix(".svg")
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(_badge_payload(hallucination), indent=2) + "\n")
+    svg_path.write_text(badge_svg(hallucination))
+    return [json_path, svg_path]
+
+
 def _github_links() -> dict:
     """Best-effort run/commit links from the Actions environment (empty locally)."""
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
@@ -231,9 +245,8 @@ def main() -> int:
         print(f"wrote PR report -> {args.report}")
 
     if args.badge:
-        Path(args.badge).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.badge).write_text(json.dumps(_badge_payload(hallu), indent=2) + "\n")
-        print(f"wrote badge -> {args.badge}")
+        written = write_badges(hallu, args.badge)
+        print("wrote badges -> " + ", ".join(str(p) for p in written))
 
     if args.github_output:
         _write_github_output(ok, hallu)
