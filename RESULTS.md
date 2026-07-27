@@ -4,8 +4,8 @@
 
 - **Hallucination rate reduced from 30.6% (dense baseline) to 0.0% (full agentic pipeline)** on a 62-question technical-docs benchmark (final 95% CI [0.0%, 0.0%]).
 - Faithfulness: 0.742 → 1.000.
-- Retrieval recall@k: 1.000 → 1.000; MRR: 0.922 → 0.923.
-- Context precision: 0.438 → 0.450.
+- Retrieval recall@k: 1.000 → 1.000; MRR: 0.925 → 0.923.
+- Context precision: 0.433 → 0.446.
 - Correct abstention on unanswerable questions: 0.000 → 1.000.
 - Adversarial / prompt-injection robustness: 0.000 → 1.000.
 - Semantic cache: 43 warm hits, 0 false hits on the gold set.
@@ -13,14 +13,14 @@
 ## Ablation table
 | Configuration | Hallu.↓ | Faith.↑ | Ans.F1↑ | Rec@k↑ | MRR↑ | CiteP↑ | Abst.OK↑ | AdvRobust↑ | OverAbst↓ | p95 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.922 | 0.792 | 0.000 | 0.000 | 0.000 | 0.340 |
-| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.660 |
-| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.790 |
+| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.360 |
+| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.610 |
+| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.860 |
 | + Contextual chunk enrichment | 0.306 | 0.742 | 0.331 | 1.000 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.820 |
-| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.250 |
-| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.060 |
-| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.300 |
-| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.500 |
+| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.420 |
+| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.130 |
+| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.320 |
+| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.480 |
 
 _Arrows show the desired direction. Each row adds one component to the row above._
 
@@ -36,6 +36,16 @@ Reporting per slice stops a gain on easy questions from masking a regression on 
 | adversarial | 6 | 0.000 | 1.000 | - | - | 1.000 |
 
 ![Ablation plot](eval/results/ablation.png)
+
+## Selective prediction (risk–coverage of the abstention gate)
+
+Sweeping the answer/abstain confidence traces how risk grows as the system answers more. A strong abstention signal keeps risk at zero up to the fraction of questions that are actually answerable.
+
+- Risk–coverage **AUC = 0.028** (lower is better; a random confidence signal scores ≈ the base risk).
+- **Max coverage at zero risk = 0.774**, equal to the answerable fraction (0.774) — i.e. the gate can answer *every* answerable question without answering a single out-of-scope one.
+- Risk at full coverage (answer everything) = 0.226.
+
+![Risk-coverage curve](eval/results/risk_coverage.png)
 
 ## Judge calibration (trust the grader)
 
@@ -55,6 +65,6 @@ The critic is validated against a 16-example human-labeled set of (context, clai
 
 - Metrics are computed against a hand-built gold set with easy, multi-hop, and unanswerable questions; context precision/recall are document-level (robust to chunking changes, which are an ablation variable).
 - Faithfulness/hallucination use a claim-level critic (LLM-as-judge cross-checked by an NLI entailment model) to reduce single-judge bias.
-- In `mock` mode every backend is deterministic, so CI reproduces these exact numbers; switch `mode` to `local`/`api` in `config.yaml` for real models.
+- In `mock` mode every backend is deterministic, so CI reproduces these exact numbers; switch `mode` to `local`/`api` in `config.yaml` for real models. Determinism is platform-independent: ranking rounds scores before sorting and breaks ties on chunk index, because numpy's `argpartition`/`argsort` are unstable and were reordering tied results differently on macOS vs. Linux (verified — the CI gate diffs a locally-generated baseline against a Linux runner and reports zero delta on every metric).
 - Mock embeddings are lexical (hashed bag-of-words), so dense and sparse retrieval carry similar signal and the hybrid/rerank precision lift is muted here; with real neural embeddings (bge/e5) and a cross-encoder reranker the retrieval-quality gains in those rows are substantially larger. The self-correction, CRAG abstention, and robustness effects are model-agnostic and hold in both modes.
 - HyDE and multi-hop decomposition are implemented and config-gated but not shown as ablation rows: on this small corpus retrieval recall@k already saturates at 1.0, so they are no-ops here by construction. Their benefit shows on larger corpora / at low k with neural embeddings (measured via recall@1 and MRR).

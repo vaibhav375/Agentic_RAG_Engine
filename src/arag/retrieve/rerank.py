@@ -19,7 +19,10 @@ def rerank(
         return []
     passages = [rc.chunk.text for rc in candidates]
     scores = reranker.score(query, passages)
-    order = sorted(range(len(candidates)), key=lambda i: scores[i], reverse=True)
+    # Explicit descending-score / ascending-index key rather than reverse=True:
+    # ties then resolve on candidate position on every platform, and rounding
+    # keeps float noise from reordering scores that are equal in any report.
+    order = sorted(range(len(candidates)), key=lambda i: (-round(float(scores[i]), 6), i))
     if top_n is not None:
         order = order[:top_n]
     out: list[RetrievedChunk] = []

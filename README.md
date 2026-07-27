@@ -1,9 +1,12 @@
 # Self-Correcting Agentic RAG Engine + Evaluation Harness
 
-<!-- The badge job on `main` regenerates eval/results/badge.json each merge.
-     shields.io fetches it anonymously, so the badge only renders once this
-     repo is public; re-point the URL if you fork it. -->
-![hallucination](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vaibhav375/Agentic_RAG_Engine/main/eval/results/badge.json)
+<!-- The badge job on `main` regenerates both badge forms after every merge.
+     The SVG is linked relatively so GitHub serves it directly — it renders
+     whether the repo is public or private. If you'd rather use shields.io
+     (public repos only, since shields fetches raw.githubusercontent
+     anonymously), swap in:
+     ![hallucination](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vaibhav375/Agentic_RAG_Engine/main/eval/results/badge.json) -->
+![hallucination](eval/results/badge.svg)
 
 A production-style Retrieval-Augmented Generation engine that **improves its own
 answers**: it retrieves with a hybrid dense+sparse pipeline, reranks with a
