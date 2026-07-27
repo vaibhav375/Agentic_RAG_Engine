@@ -58,6 +58,18 @@ retrieval:
   use_mmr: false                 # Maximal Marginal Relevance: diversify final contexts
   mmr_lambda: 0.7                # MMR relevance/diversity tradeoff (1.0 = pure relevance)
   rerank_model: BAAI/bge-reranker-base
+  # How the reranker's order combines with the retrieval order it was handed.
+  # "replace" trusts the reranker completely; "rrf" fuses the two rankings so a
+  # reranker weaker than the retriever can nudge but not overturn.
+  # Measured (mock, this corpus, full pipeline):
+  #   replace -> recall@1 0.833, hallucination 0.000, correct abstention 1.000
+  #   rrf     -> recall@1 0.917, hallucination 0.032, correct abstention 0.750
+  # rrf ranks better but shifts which passages reach the generator, and the CRAG
+  # gate's thresholds are calibrated against the context set it was tuned on —
+  # `make sweep NAME=crag` could only recover to 0.016/0.875. Ranking quality is
+  # not worth the headline safety metric, so `replace` stays the default. Revisit
+  # with a real cross-encoder, where the reranker actually adds information.
+  rerank_fusion: replace         # rrf | replace
   rerank_top_n: 5                # context passages fed to the generator
   fetch_k: 20                    # candidates pulled before fusion/rerank
 
@@ -115,11 +127,27 @@ eval:
   metric_judge_provider: null    # null -> use llm.provider
   subset: null                   # e.g. 20 to run a fast CI subset; null = all
   retrieval_k: 10                # k for recall@k / precision@k on the ranked pool
+  # recall@k at a generous k saturates at 1.0 on a small corpus, hiding every
+  # ranking change. Also report recall at the k the generator actually reads,
+  # where hybrid/rerank/HyDE differences are visible.
+  strict_ks: [1, 3]
   calibration_path: data/eval/judge_calibration.jsonl
   # How eval measures faithfulness. Default "nli" decouples the metric from the
   # LLM-as-judge that drives the online loop, so we don't grade the loop with its
   # own grader. Set "llm" or "both" to compare.
   faithfulness_method: nli
+  # Threshold grids for `make sweep` (python -m eval.sweep <name>). Each entry is
+  # {dotted config key: [values]}; the sweep runs the full pipeline at every
+  # combination and reports the best point that doesn't regress safety.
+  sweeps:
+    abstention:
+      agent.support_threshold: [0.3, 0.5, 0.7]
+      agent.nli_entail_threshold: [0.3, 0.5, 0.7]
+    crag:
+      agent.crag.correct_threshold: [0.5, 0.55, 0.6]
+      agent.crag.incorrect_threshold: [0.45, 0.51, 0.55]
+    cache:
+      cache.similarity_threshold: [0.9, 0.95, 0.98]
   # CI regression gate + PR eval-report bot. These are the defaults; the
   # `eval.ci_gate` CLI flags override them.
   ci_gate:

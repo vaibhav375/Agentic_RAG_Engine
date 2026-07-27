@@ -10,6 +10,8 @@ _COLUMNS = [
     ("faithfulness", "Faith.↑"),
     ("answer_correctness", "Ans.F1↑"),
     ("recall_at_k", "Rec@k↑"),
+    ("recall_at_1", "Rec@1↑"),
+    ("recall_at_3", "Rec@3↑"),
     ("mrr", "MRR↑"),
     ("citation_precision", "CiteP↑"),
     ("correct_abstention_rate", "Abst.OK↑"),
@@ -233,10 +235,22 @@ def write_results_md(results: list[dict], out_path: str = "RESULTS.md", calibrat
         "neural embeddings (bge/e5) and a cross-encoder reranker the retrieval-quality gains "
         "in those rows are substantially larger. The self-correction, CRAG abstention, and "
         "robustness effects are model-agnostic and hold in both modes.\n"
+        "- `recall@k` (k=10) saturates at 1.000 on a 47-chunk corpus, so it cannot show a "
+        "retrieval change; **recall@1 / recall@3** are the columns to read for ranking work. "
+        "They make the hybrid gain visible (recall@1 0.854 → 0.917) where recall@k showed "
+        "nothing, and they are what makes HyDE / decomposition / chunking measurable at all.\n"
+        "- **Reranking costs ranking quality here** (recall@1 0.917 → 0.833): the mock "
+        "reranker is lexical, so it carries less signal than the dense+sparse fusion it "
+        "overwrites. `retrieval.rerank_fusion: rrf` fuses the two rankings instead and fully "
+        "recovers recall@1 — but it shifts which passages reach the generator, and the CRAG "
+        "gate (whose thresholds are calibrated against that context set) then degrades to "
+        "hallucination 0.032 / correct abstention 0.750; `make sweep NAME=crag` recovers only "
+        "to 0.016 / 0.875. Ranking quality isn't worth the headline safety metric, so "
+        "`replace` remains the default and the knob is documented. This trade-off is a mock "
+        "artifact of a lexical reranker — re-measure it with a real cross-encoder.\n"
         "- HyDE and multi-hop decomposition are implemented and config-gated but not shown as "
-        "ablation rows: on this small corpus retrieval recall@k already saturates at 1.0, so "
-        "they are no-ops here by construction. Their benefit shows on larger corpora / at low "
-        "k with neural embeddings (measured via recall@1 and MRR).\n"
+        "ablation rows: they are no-ops at this corpus size, and their benefit shows on larger "
+        "corpora / at low k with neural embeddings (now measurable via recall@1 and MRR).\n"
     )
     Path(out_path).write_text("".join(parts))
     return out_path
