@@ -14,9 +14,9 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -39,7 +39,7 @@ jobs:
       # falling back to the default branch's cache for PR runs. Absent on the
       # very first run — the trend degrades gracefully to a one-line note.
       - name: Restore eval history (trend across runs)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         continue-on-error: true
         with:
           path: eval/results/history.jsonl
@@ -59,7 +59,7 @@ jobs:
         run: python -m eval.dashboard config/config.yaml
 
       - name: Upload eval artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: eval-dashboard
           path: |
@@ -75,7 +75,7 @@ jobs:
       - name: Post eval report comment
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -111,9 +111,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -126,11 +126,11 @@ jobs:
 
       - name: Commit badge
         run: |
-          if git diff --quiet -- eval/results/badge.json; then
+          if git diff --quiet -- eval/results/badge.json eval/results/badge.svg; then
             echo "badge unchanged"; exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add eval/results/badge.json
+          git add eval/results/badge.json eval/results/badge.svg
           git commit -m "chore: update hallucination badge [skip ci]"
           git push

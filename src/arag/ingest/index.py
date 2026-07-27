@@ -21,6 +21,10 @@ from arag.ingest.load import load_corpus
 from arag.providers.base import tokenize
 from arag.providers.embeddings import make_embedder
 
+# Scores are rounded to this many decimals before ranking so that float noise
+# below the precision anyone reports can't reorder results. See `_rank_topk`.
+_RANK_DECIMALS = 6
+
 CHUNKS_FILE = "chunks.jsonl"
 EMB_FILE = "embeddings.npy"
 BM25_FILE = "bm25.pkl"
@@ -62,22 +66,33 @@ class Store:
     def get(self, chunk_id: str) -> Chunk | None:
         return self._by_id.get(chunk_id)
 
+    def _rank_topk(self, scores: np.ndarray, k: int) -> np.ndarray:
+        """Top-k indices by score, ranked reproducibly on any machine.
+
+        Ties are the norm here (lexical mock embeddings, BM25 zeros), and both
+        `argpartition` and the default `argsort` are *unstable* — their tie order
+        varies with numpy build and SIMD width, which silently moved retrieval
+        metrics between macOS and the Linux CI runner. Two defenses:
+          * round to `_RANK_DECIMALS` so float32/BLAS accumulation noise (~1e-7)
+            can't turn a mathematical tie into a strict ordering;
+          * break remaining ties on chunk index via a stable lexsort, so the
+            ranking is a pure function of the index, not of memory layout.
+        """
+        k = min(k, len(self.chunks))
+        rounded = np.round(np.asarray(scores, dtype=np.float64), _RANK_DECIMALS)
+        # lexsort's LAST key is primary: score desc, then index asc.
+        return np.lexsort((np.arange(len(rounded)), -rounded))[:k]
+
     def dense_search(self, query: str, k: int) -> list[tuple[Chunk, float]]:
         qv = self.embedder.encode_one(query)
         # embeddings are L2-normalized -> dot product = cosine similarity
         sims = self.embeddings @ qv
-        k = min(k, len(self.chunks))
-        idx = np.argpartition(-sims, k - 1)[:k]
-        idx = idx[np.argsort(-sims[idx])]
-        return [(self.chunks[i], float(sims[i])) for i in idx]
+        return [(self.chunks[i], float(sims[i])) for i in self._rank_topk(sims, k)]
 
     def sparse_search(self, query: str, k: int) -> list[tuple[Chunk, float]]:
         toks = tokenize(query)
         scores = np.asarray(self.bm25.get_scores(toks))
-        k = min(k, len(self.chunks))
-        idx = np.argpartition(-scores, k - 1)[:k]
-        idx = idx[np.argsort(-scores[idx])]
-        return [(self.chunks[i], float(scores[i])) for i in idx]
+        return [(self.chunks[i], float(scores[i])) for i in self._rank_topk(scores, k)]
 
 
 def build_index(cfg) -> Store:

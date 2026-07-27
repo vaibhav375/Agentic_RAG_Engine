@@ -45,8 +45,11 @@ def reciprocal_rank_fusion(
             if cid not in fused:
                 fused[cid] = rc
 
+    # Python's sort is stable, so RRF ties keep insertion order — dense hits
+    # before sparse-only ones, which is the tie-break we want. Rounding the key
+    # keeps float-sum noise from disturbing that.
     out: list[RetrievedChunk] = []
-    for cid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+    for cid, score in sorted(scores.items(), key=lambda x: -round(x[1], 9)):
         rc = fused[cid]
         out.append(
             RetrievedChunk(chunk=rc.chunk, score=round(score, 6), source="fused", ranks=ranks[cid])
@@ -66,7 +69,7 @@ def fuse_many(lists: list[list[RetrievedChunk]], rrf_k: int = 60) -> list[Retrie
             ranks.setdefault(cid, {})[f"list{li}"] = rank
             keep.setdefault(cid, rc)
     out = []
-    for cid, sc in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+    for cid, sc in sorted(scores.items(), key=lambda x: -round(x[1], 9)):
         out.append(RetrievedChunk(chunk=keep[cid].chunk, score=round(sc, 6), source="fused", ranks=ranks[cid]))
     return out
 

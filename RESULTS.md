@@ -4,8 +4,8 @@
 
 - **Hallucination rate reduced from 30.6% (dense baseline) to 0.0% (full agentic pipeline)** on a 62-question technical-docs benchmark (final 95% CI [0.0%, 0.0%]).
 - Faithfulness: 0.742 → 1.000.
-- Retrieval recall@k: 1.000 → 1.000; MRR: 0.922 → 0.923.
-- Context precision: 0.438 → 0.450.
+- Retrieval recall@k: 1.000 → 1.000; MRR: 0.925 → 0.923.
+- Context precision: 0.433 → 0.446.
 - Correct abstention on unanswerable questions: 0.000 → 1.000.
 - Adversarial / prompt-injection robustness: 0.000 → 1.000.
 - Semantic cache: 43 warm hits, 0 false hits on the gold set.
@@ -13,14 +13,14 @@
 ## Ablation table
 | Configuration | Hallu.↓ | Faith.↑ | Ans.F1↑ | Rec@k↑ | MRR↑ | CiteP↑ | Abst.OK↑ | AdvRobust↑ | OverAbst↓ | p95 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.922 | 0.792 | 0.000 | 0.000 | 0.000 | 0.340 |
-| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.660 |
-| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.790 |
+| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.310 |
+| + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.640 |
+| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.840 |
 | + Contextual chunk enrichment | 0.306 | 0.742 | 0.331 | 1.000 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.820 |
-| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.250 |
-| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.060 |
-| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.300 |
-| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.500 |
+| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.570 |
+| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.290 |
+| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.420 |
+| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.440 |
 
 _Arrows show the desired direction. Each row adds one component to the row above._
 
@@ -36,6 +36,16 @@ Reporting per slice stops a gain on easy questions from masking a regression on 
 | adversarial | 6 | 0.000 | 1.000 | - | - | 1.000 |
 
 ![Ablation plot](eval/results/ablation.png)
+
+## Selective prediction (risk–coverage of the abstention gate)
+
+Sweeping the answer/abstain confidence traces how risk grows as the system answers more. A strong abstention signal keeps risk at zero up to the fraction of questions that are actually answerable.
+
+- Risk–coverage **AUC = 0.028** (lower is better; a random confidence signal scores ≈ the base risk).
+- **Max coverage at zero risk = 0.774**, equal to the answerable fraction (0.774) — i.e. the gate can answer *every* answerable question without answering a single out-of-scope one.
+- Risk at full coverage (answer everything) = 0.226.
+
+![Risk-coverage curve](eval/results/risk_coverage.png)
 
 ## Judge calibration (trust the grader)
 
