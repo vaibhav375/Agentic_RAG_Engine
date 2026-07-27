@@ -11,6 +11,8 @@
   "answer_relevance": 0.3873,
   "answer_correctness": 0.3229,
   "recall_at_k": 1.0,
+  "recall_at_1": 0.8333,
+  "recall_at_3": 0.9583,
   "precision_at_k": 0.1454,
   "mrr": 0.9132,
   "context_precision": 0.4458,
@@ -20,8 +22,8 @@
   "over_abstention_rate": 0.1042,
   "adversarial_robustness_rate": 1.0,
   "injection_detection_rate": 0.8333,
-  "latency_p50_ms": 0.97,
-  "latency_p95_ms": 3.56,
+  "latency_p50_ms": 0.95,
+  "latency_p95_ms": 3.4,
   "cost_usd_total": 0.0,
   "cost_usd_mean": 0.0,
   "cache_hit_rate": 0.0,
@@ -38,7 +40,9 @@
       "precision_at_k": 0.1389,
       "mrr": 0.8958,
       "context_precision": 0.415,
-      "context_recall": 0.975
+      "context_recall": 0.975,
+      "recall_at_1": 0.825,
+      "recall_at_3": 0.95
     },
     "multi_hop": {
       "n": 8,
@@ -52,7 +56,9 @@
       "precision_at_k": 0.178,
       "mrr": 1.0,
       "context_precision": 0.6,
-      "context_recall": 1.0
+      "context_recall": 1.0,
+      "recall_at_1": 0.875,
+      "recall_at_3": 1.0
     },
     "unanswerable": {
       "n": 8,
