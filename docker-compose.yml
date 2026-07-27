@@ -1,0 +1,62 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Point the app at the compose services and switch off pure-mock mode.
+      - ARAG_VECTOR_STORE__QDRANT_URL=http://qdrant:6333
+      - ARAG_CACHE__REDIS_URL=redis://redis:6379/0
+      # Supply your key at runtime, e.g. `OPENAI_API_KEY=... docker compose up`
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ARAG_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    command: ["python", "-m", "arag.cli", "serve", "--config", "config/config.yaml"]
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    depends_on:
+      - app
+    environment:
+      # The browser (on the host) talks to the host-mapped backend port.
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev"
+
+volumes:
+  qdrant_data:

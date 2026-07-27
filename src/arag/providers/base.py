@@ -1,0 +1,202 @@
+"""Provider interfaces + small shared text utilities."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+
+import numpy as np
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "is",
+    "are", "be", "as", "at", "by", "it", "this", "that", "from", "you", "your",
+    "can", "how", "do", "does", "what", "which", "when", "where", "why", "i",
+    "we", "will", "if", "then", "into", "using", "use", "used", "not", "no",
+}
+
+
+def tokenize(text: str) -> list[str]:
+    return _WORD_RE.findall(text.lower())
+
+
+def content_tokens(text: str) -> set[str]:
+    return {t for t in tokenize(text) if t not in _STOPWORDS and len(t) > 1}
+
+
+def split_sentences(text: str) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    parts = _SENT_SPLIT_RE.split(text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def lexical_overlap(a: str, b: str) -> float:
+    """Jaccard-ish support score: fraction of content tokens in `a` present in `b`."""
+    ta, tb = content_tokens(a), content_tokens(b)
+    if not ta:
+        return 0.0
+    return len(ta & tb) / len(ta)
+
+
+# --------------------------------------------------------------------------- #
+# Embeddings
+# --------------------------------------------------------------------------- #
+class Embedder(ABC):
+    dim: int
+
+    @abstractmethod
+    def encode(self, texts: list[str]) -> np.ndarray:  # (n, dim) float32
+        ...
+
+    def encode_one(self, text: str) -> np.ndarray:
+        return self.encode([text])[0]
+
+
+class MockEmbedder(Embedder):
+    """Deterministic hashing bag-of-words embedding.
+
+    Content tokens are hashed into a fixed-dim vector (signed hashing trick),
+    then L2-normalized. Cosine similarity therefore tracks lexical overlap —
+    good enough to make retrieval behave sensibly and reproducibly offline,
+    with zero dependencies.
+    """
+
+    def __init__(self, dim: int = 384, normalize: bool = True):
+        self.dim = dim
+        self.normalize = normalize
+
+    def _embed(self, text: str) -> np.ndarray:
+        vec = np.zeros(self.dim, dtype=np.float32)
+        for tok in content_tokens(text):
+            h = int.from_bytes(hashlib.md5(tok.encode()).digest()[:8], "little")
+            idx = h % self.dim
+            sign = 1.0 if (h >> 63) & 1 else -1.0
+            vec[idx] += sign
+        if self.normalize:
+            n = np.linalg.norm(vec)
+            if n > 0:
+                vec /= n
+        return vec
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        return np.vstack([self._embed(t) for t in texts])
+
+
+# --------------------------------------------------------------------------- #
+# Reranker
+# --------------------------------------------------------------------------- #
+class Reranker(ABC):
+    @abstractmethod
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        ...
+
+
+class MockReranker(Reranker):
+    """Lexical cross-encoder stand-in: content-token overlap with a mild length
+    penalty. Correlates with real reranker behavior (precision-boosting) so the
+    ablation shows a realistic lift, deterministically."""
+
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        qt = content_tokens(query)
+        out = []
+        for p in passages:
+            pt = content_tokens(p)
+            if not qt or not pt:
+                out.append(0.0)
+                continue
+            inter = len(qt & pt)
+            prec = inter / len(pt)
+            rec = inter / len(qt)
+            f1 = 0.0 if (prec + rec) == 0 else 2 * prec * rec / (prec + rec)
+            out.append(round(f1, 6))
+        return out
+
+
+# --------------------------------------------------------------------------- #
+# NLI (claim-level entailment cross-check)
+# --------------------------------------------------------------------------- #
+@dataclass
+class NLIResult:
+    entailment: float
+    neutral: float
+    contradiction: float
+
+    @property
+    def label(self) -> str:
+        return max(
+            (("entailment", self.entailment), ("neutral", self.neutral),
+             ("contradiction", self.contradiction)),
+            key=lambda x: x[1],
+        )[0]
+
+
+class NLIModel(ABC):
+    @abstractmethod
+    def entail(self, premise: str, hypothesis: str) -> NLIResult:
+        ...
+
+
+class MockNLI(NLIModel):
+    """Lexical entailment proxy. Entailment prob = fraction of hypothesis content
+    tokens found in the premise; the remainder splits into neutral/contradiction.
+    Deterministic and dependency-free, mirrors a real NLI cross-check's signal."""
+
+    def entail(self, premise: str, hypothesis: str) -> NLIResult:
+        support = lexical_overlap(hypothesis, premise)
+        entail = support
+        neutral = (1 - support) * 0.8
+        contra = (1 - support) * 0.2
+        return NLIResult(entailment=entail, neutral=neutral, contradiction=contra)
+
+
+# --------------------------------------------------------------------------- #
+# LLM task interface (high level, provider-agnostic)
+# --------------------------------------------------------------------------- #
+@dataclass
+class GeneratedAnswer:
+    text: str
+    cited_chunk_ids: list[str] = field(default_factory=list)
+    abstained: bool = False
+
+
+class LanguageModel(ABC):
+    """High-level task interface. Real backends implement each task by prompting
+    an LLM and parsing structured output; the mock implements them directly."""
+
+    @abstractmethod
+    def generate_answer(self, query: str, contexts: list[tuple[str, str]]) -> GeneratedAnswer:
+        """contexts: list of (chunk_id, text). Returns a grounded answer that
+        cites chunk_ids, or abstains if the context does not support an answer."""
+
+    @abstractmethod
+    def extract_claims(self, answer: str) -> list[str]:
+        ...
+
+    @abstractmethod
+    def judge_claim(self, claim: str, context: str) -> tuple[bool, str, float]:
+        """Return (supported, reason, confidence)."""
+
+    @abstractmethod
+    def reformulate(self, query: str, missing_info: str | None, prior: list[str]) -> str:
+        ...
+
+    @abstractmethod
+    def classify_complexity(self, query: str) -> str:
+        """Return 'simple' or 'complex'."""
+
+    @abstractmethod
+    def hypothetical_document(self, query: str) -> str:
+        """HyDE: a hypothetical passage that would answer the query, to embed and
+        retrieve against (bridges the query/document vocabulary gap)."""
+
+    @abstractmethod
+    def decompose(self, query: str) -> list[str]:
+        """Split a multi-hop question into sub-questions (or return [query])."""

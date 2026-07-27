@@ -1,0 +1,71 @@
+{
+  "n": 62,
+  "hallucination_rate": 0.0,
+  "hallucination_rate_ci95": [
+    0.0,
+    0.0
+  ],
+  "hallucination_rate_answerable": 0.0,
+  "hallucination_rate_unanswerable": 0.0,
+  "faithfulness": 1.0,
+  "answer_relevance": 0.3873,
+  "answer_correctness": 0.3229,
+  "recall_at_k": 1.0,
+  "precision_at_k": 0.1434,
+  "mrr": 0.9122,
+  "context_precision": 0.45,
+  "context_recall": 0.9792,
+  "citation_precision": 0.875,
+  "correct_abstention_rate": 1.0,
+  "over_abstention_rate": 0.1042,
+  "adversarial_robustness_rate": 1.0,
+  "injection_detection_rate": 0.8333,
+  "latency_p50_ms": 1.12,
+  "latency_p95_ms": 4.22,
+  "cost_usd_total": 0.0,
+  "cost_usd_mean": 0.0,
+  "cache_hit_rate": 0.0,
+  "by_slice": {
+    "easy": {
+      "n": 40,
+      "hallucination_rate": 0.0,
+      "faithfulness": 1.0,
+      "unsupported_claim_rate": 0.0,
+      "answer_relevance": 0.409,
+      "answer_correctness": 0.3261,
+      "citation_precision": 0.85,
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.1365,
+      "mrr": 0.8946,
+      "context_precision": 0.42,
+      "context_recall": 0.975
+    },
+    "multi_hop": {
+      "n": 8,
+      "hallucination_rate": 0.0,
+      "faithfulness": 1.0,
+      "unsupported_claim_rate": 0.0,
+      "answer_relevance": 0.2788,
+      "answer_correctness": 0.3068,
+      "citation_precision": 1.0,
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.178,
+      "mrr": 1.0,
+      "context_precision": 0.6,
+      "context_recall": 1.0
+    },
+    "unanswerable": {
+      "n": 8,
+      "hallucination_rate": 0.0,
+      "faithfulness": 1.0,
+      "unsupported_claim_rate": 0.0
+    },
+    "adversarial": {
+      "n": 6,
+      "hallucination_rate": 0.0,
+      "faithfulness": 1.0,
+      "unsupported_claim_rate": 0.0,
+      "robustness_pass": 1.0
+    }
+  }
+}
