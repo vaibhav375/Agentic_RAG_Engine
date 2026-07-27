@@ -1,0 +1,16 @@
+{"id": "j01", "context": "The default widget color is blue.", "claim": "The default color of a widget is blue.", "human_label": true}
+{"id": "j02", "context": "A single account may create at most 50 widgets.", "claim": "An account can create up to 50 widgets.", "human_label": true}
+{"id": "j03", "context": "The default battery capacity is 1000 mAh.", "claim": "Batteries default to 1000 mAh of capacity.", "human_label": true}
+{"id": "j04", "context": "Only GET and HEAD requests are cached.", "claim": "GET requests are cached.", "human_label": true}
+{"id": "j05", "context": "Validation runs before your handler is called.", "claim": "Validation happens before the handler runs.", "human_label": true}
+{"id": "j06", "context": "Background tasks are executed in the order they were added.", "claim": "Background tasks run in the order they were added.", "human_label": true}
+{"id": "j07", "context": "A 403 means authenticated but not allowed.", "claim": "A 403 response indicates the user is authenticated but not permitted.", "human_label": true}
+{"id": "j08", "context": "The gzip minimum_size defaults to 500 bytes.", "claim": "GZip compresses responses over 500 bytes by default.", "human_label": true}
+{"id": "j09", "context": "The default widget color is blue.", "claim": "Widgets support real-time websocket streaming.", "human_label": false}
+{"id": "j10", "context": "A single account may create at most 50 widgets.", "claim": "Widgets can be exported as PDF files.", "human_label": false}
+{"id": "j11", "context": "Only GET and HEAD requests are cached.", "claim": "The framework ships with a built-in ORM.", "human_label": false}
+{"id": "j12", "context": "The default battery capacity is 1000 mAh.", "claim": "Gadgets can connect over Bluetooth.", "human_label": false}
+{"id": "j13", "context": "A single account may create at most 50 widgets.", "claim": "An account can create an unlimited number of widgets.", "human_label": false}
+{"id": "j14", "context": "The default battery capacity is 1000 mAh.", "claim": "The maximum battery capacity is 1000 mAh.", "human_label": false}
+{"id": "j15", "context": "Background tasks run after the response is sent.", "claim": "Background tasks run before the response is sent.", "human_label": false}
+{"id": "j16", "context": "Only GET and HEAD requests are cached.", "claim": "POST requests are cached by default.", "human_label": false}

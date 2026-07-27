@@ -1,0 +1,130 @@
+# =============================================================================
+# Agentic RAG Engine — central configuration
+# Every tunable lives here. Nothing about models / k-values / thresholds should
+# be hard-coded in the source. Override any field via env var ARAG_<PATH>, e.g.
+#   ARAG_LLM__PROVIDER=openai  ARAG_RETRIEVAL__K_DENSE=20
+# =============================================================================
+
+# ----- Provider mode -------------------------------------------------------
+# "mock"  -> fully deterministic, no network, no API keys (used by tests/CI/demo)
+# "local" -> sentence-transformers embeddings + cross-encoder rerank + Ollama LLM
+# "api"   -> API embeddings/LLM (OpenAI or Anthropic)
+# The three components (embeddings, reranker, llm, nli) can each be pointed at a
+# different backend; `mode` just sets sensible defaults below.
+mode: mock
+
+# Directory of raw source documents to ingest.
+corpus_dir: data/corpus
+
+# ----- Embeddings ----------------------------------------------------------
+embeddings:
+  provider: mock                 # mock | sentence_transformers | openai
+  model: BAAI/bge-small-en-v1.5  # used when provider=sentence_transformers
+  openai_model: text-embedding-3-small
+  dim: 384                       # mock/st dimension; openai-3-small = 1536
+  batch_size: 64
+  normalize: true
+
+# ----- LLM (generation + critic + reformulation) ---------------------------
+llm:
+  provider: mock                 # mock | openai | anthropic | ollama
+  model: gpt-4o-mini             # openai
+  anthropic_model: claude-3-5-sonnet-latest
+  ollama_model: llama3.1:8b
+  temperature: 0.0
+  max_tokens: 1024
+  # A cheaper/faster model for the critic + router if you want a split. Falls
+  # back to `model` when null.
+  judge_model: null
+  router_model: null
+
+# ----- Chunking (first-class ablation variable) ----------------------------
+chunking:
+  strategy: recursive            # recursive | sentence | fixed
+  chunk_size: 512                # tokens (approx, whitespace-token proxy)
+  chunk_overlap: 64
+  contextual_enrichment: false   # Anthropic-style: prepend LLM-written context
+                                 # to each chunk before embedding (ablation knob)
+
+# ----- Retrieval -----------------------------------------------------------
+retrieval:
+  k_dense: 10
+  k_sparse: 10
+  rrf_k: 60                      # Reciprocal Rank Fusion constant
+  use_hybrid: false              # Phase 3 turns this on
+  use_rerank: false              # Phase 3 turns this on
+  use_hyde: false                # HyDE: embed a hypothetical answer for dense search
+  use_decompose: false           # split multi-hop queries into sub-questions + fuse
+  use_mmr: false                 # Maximal Marginal Relevance: diversify final contexts
+  mmr_lambda: 0.7                # MMR relevance/diversity tradeoff (1.0 = pure relevance)
+  rerank_model: BAAI/bge-reranker-base
+  rerank_top_n: 5                # context passages fed to the generator
+  fetch_k: 20                    # candidates pulled before fusion/rerank
+
+# ----- Vector store --------------------------------------------------------
+vector_store:
+  backend: faiss                 # faiss | qdrant
+  qdrant_url: http://localhost:6333
+  collection: arag_docs
+  persist_dir: .arag_index       # where FAISS/BM25/meta are persisted
+
+# ----- Agentic self-correction loop ----------------------------------------
+agent:
+  enabled: false                 # Phase 4 turns this on
+  max_iterations: 2              # hard cap to protect latency/cost
+  critic: llm                    # llm | nli | both  (both = LLM judge + NLI cross-check)
+  nli_model: cross-encoder/nli-deberta-v3-base
+  support_threshold: 0.5         # min fraction of claims that must be supported
+  nli_entail_threshold: 0.5      # NLI entailment prob to count a claim supported
+  abstain_message: "I don't have enough information in the provided sources to answer this confidently."
+  # Corrective-RAG (CRAG) answerability gate: grade whether retrieved context can
+  # actually answer the query before generating; decline when it can't. This is
+  # the main lever for eliminating out-of-scope hallucination.
+  crag:
+    enabled: false               # Phase 4 (extra) turns this on
+    mode: heuristic              # heuristic (IDF coverage) | llm
+    correct_threshold: 0.55      # IDF-weighted query coverage >= -> answerable
+    incorrect_threshold: 0.51    # < -> out of scope, abstain (tuned on the gold set)
+  # Query router: send trivially-simple queries straight to generation and only
+  # complex ones through the full loop (cost-aware). Classifier is heuristic +
+  # optional LLM.
+  router:
+    enabled: false               # Phase 4 (extra) turns this on
+    mode: heuristic              # heuristic | llm
+    complex_min_tokens: 12       # queries longer than this are "complex"
+
+# ----- Semantic cache ------------------------------------------------------
+cache:
+  enabled: false                 # Phase 5 turns this on
+  backend: memory                # memory | redis
+  redis_url: redis://localhost:6379/0
+  similarity_threshold: 0.95     # cosine >= this -> cache hit (conservative)
+  ttl_seconds: 3600
+  max_entries: 1000
+
+# ----- Serving -------------------------------------------------------------
+serve:
+  host: 0.0.0.0
+  port: 8000
+
+# ----- Evaluation ----------------------------------------------------------
+eval:
+  gold_path: data/eval/gold_qa.jsonl
+  results_dir: eval/results
+  # Metric judge can differ from the answer LLM to reduce self-preference bias.
+  metric_judge_provider: null    # null -> use llm.provider
+  subset: null                   # e.g. 20 to run a fast CI subset; null = all
+  retrieval_k: 10                # k for recall@k / precision@k on the ranked pool
+  calibration_path: data/eval/judge_calibration.jsonl
+  # How eval measures faithfulness. Default "nli" decouples the metric from the
+  # LLM-as-judge that drives the online loop, so we don't grade the loop with its
+  # own grader. Set "llm" or "both" to compare.
+  faithfulness_method: nli
+  # CI regression gate + PR eval-report bot. These are the defaults; the
+  # `eval.ci_gate` CLI flags override them.
+  ci_gate:
+    max_hallucination: 0.15      # absolute budget: fail above this
+    min_correct_abstention: 0.5  # absolute budget: fail below this
+    tolerance: 0.05              # allowed per-metric regression vs. the baseline
+    baseline_path: eval/results/ci_baseline.json
+    trend_runs: 8                # runs shown in the PR comment's sparkline trend

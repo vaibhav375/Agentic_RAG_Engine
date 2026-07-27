@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Project artifacts
+.arag_index/
+eval/results/*.json
+eval/results/*.png
+eval/results/dashboard.html
+# Run history is carried between CI runs as a workflow artifact, not committed
+eval/results/history.jsonl
+# ...but keep the committed CI regression baseline tracked
+!eval/results/ci_baseline.json
+# ...and the badge JSON the README's shields.io endpoint reads from main
+!eval/results/badge.json
+# Locally rendered PR eval-report body (CI writes its own per run)
+comment.md
+*.log
+
+# Large raw corpora (keep the small bundled sample tracked)
+data/corpus/downloaded/
+
+# Env / secrets
+.env
+
+# Personal planning docs (kept on disk, out of the repo)
+PROJECT_2_Agentic_RAG_Engine.md
+PROJECT_3_RLVR_Reasoning_Engine.md
+
+# Local agent settings
+.claude/settings.local.json
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
