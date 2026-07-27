@@ -52,6 +52,12 @@ def _dedupe(seq: list[str]) -> list[str]:
     return list(dict.fromkeys(seq))
 
 
+def strict_ks(cfg) -> list[int]:
+    """Small k values to report recall at, alongside the headline recall@k."""
+    ks = cfg.get("eval.strict_ks") or []
+    return [int(k) for k in ks]
+
+
 def recall_at_k(ranked_doc_ids: list[str], gold_doc_ids: list[str], k: int) -> float:
     if not gold_doc_ids:
         return 0.0
@@ -133,6 +139,11 @@ def evaluate_record(comp, gold: GoldQA, ans: Answer) -> dict:
         metrics["recall_at_k"] = recall_at_k(ranked_doc_ids, gold.supporting_doc_ids, k)
         metrics["precision_at_k"] = precision_at_k(ranked_doc_ids, gold.supporting_doc_ids, k)
         metrics["mrr"] = mrr(ranked_doc_ids, gold.supporting_doc_ids)
+        # Strict-k recall. recall@k with a generous k saturates at 1.0 on a small
+        # corpus, which makes every retrieval change look like a no-op; recall at
+        # a k near what the generator actually reads is where ranking work shows.
+        for sk in strict_ks(cfg):
+            metrics[f"recall_at_{sk}"] = recall_at_k(ranked_doc_ids, gold.supporting_doc_ids, sk)
         # generation stage
         cp, cr = context_precision_recall(context_doc_ids, gold.supporting_doc_ids)
         metrics["context_precision"] = cp
@@ -213,10 +224,18 @@ _METRIC_KEYS = [
 ]
 
 
+def _strict_recall_keys(records: list[dict]) -> list[str]:
+    """`recall_at_<n>` keys present in these records, smallest k first. Which k
+    values exist is config-driven, so they're discovered rather than hard-coded."""
+    keys = {k for r in records for k in r["metrics"] if k.startswith("recall_at_")
+            and k != "recall_at_k"}
+    return sorted(keys, key=lambda k: int(k.rsplit("_", 1)[1]))
+
+
 def _slice_summary(records: list[dict]) -> dict:
     hallu = [r["metrics"].get("hallucination", 0.0) for r in records]
     out = {"n": len(records), "hallucination_rate": _mean(hallu)}
-    for key in _METRIC_KEYS:
+    for key in _METRIC_KEYS + _strict_recall_keys(records):
         vals = [r["metrics"].get(key) for r in records if key in r["metrics"]]
         if vals:
             out[key] = _mean(vals)
@@ -244,6 +263,10 @@ def aggregate(records: list[dict]) -> dict:
         "answer_relevance": _mean([r["metrics"].get("answer_relevance") for r in answerable]),
         "answer_correctness": _mean([r["metrics"].get("answer_correctness") for r in answerable]),
         "recall_at_k": _mean([r["metrics"].get("recall_at_k") for r in answerable]),
+        **{
+            key: _mean([r["metrics"].get(key) for r in answerable])
+            for key in _strict_recall_keys(answerable)
+        },
         "precision_at_k": _mean([r["metrics"].get("precision_at_k") for r in answerable]),
         "mrr": _mean([r["metrics"].get("mrr") for r in answerable]),
         "context_precision": _mean([r["metrics"].get("context_precision") for r in answerable]),

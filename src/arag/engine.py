@@ -79,7 +79,14 @@ def retrieve_contexts(
 
     if bool(r.get("use_rerank", False)):
         with trace.stage("rerank", candidates=len(candidates)):
-            ranked = rerank_candidates(comp.reranker, retrieval_query, candidates, top_n=None)
+            ranked = rerank_candidates(
+                comp.reranker,
+                retrieval_query,
+                candidates,
+                top_n=None,
+                fusion=str(r.get("rerank_fusion", "replace")),
+                rrf_k=int(r.get("rrf_k", 60)),
+            )
     else:
         ranked = candidates
 

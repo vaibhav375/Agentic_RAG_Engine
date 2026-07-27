@@ -22,6 +22,8 @@ _TRACKED = [
     "faithfulness",
     "answer_correctness",
     "recall_at_k",
+    "recall_at_1",
+    "recall_at_3",
     "mrr",
     "context_precision",
     "correct_abstention_rate",

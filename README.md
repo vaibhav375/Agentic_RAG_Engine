@@ -217,6 +217,13 @@ and `MRR` measure the retrieved pool; faithfulness/relevance/correctness measure
 the answer given that pool. A regression then points at the half to fix instead
 of a blended score that hides it.
 
+**Retrieval is also scored at strict k.** `recall@k` with a generous k saturates
+at 1.000 on a corpus this size — every ranking change looks like a no-op, which
+is a benchmark that can't grade the thing it's measuring. `recall@1` / `recall@3`
+(`eval.strict_ks`) sit next to it and do show the work: the hybrid row moves
+recall@1 0.854 → 0.917 where `recall@k` showed a flat 1.000. They're also what
+makes reranking's *cost* visible (see `RESULTS.md`) instead of invisible.
+
 The gold set is hand-built with **easy, multi-hop, and unanswerable** questions;
 `make ablation` / `python -m eval.build_gold_set` validate that every supporting
 quote exists in the ingested corpus. Context precision/recall are **document-
@@ -281,6 +288,7 @@ make gate          # CI regression gate: budget + baseline diff
 make report        # render the PR eval-report comment locally (comment.md)
 make history       # experiment registry: recent runs (git sha + config hash)
 make selective     # risk–coverage analysis of the abstention gate (AUC)
+make sweep         # grid-sweep thresholds (NAME=abstention|crag|cache)
 make dashboard     # self-contained HTML eval dashboard (open in a browser)
 ```
 
@@ -307,6 +315,13 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
   abstention on unanswerables) hold in every mode.
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
   neural embeddings — see the note in `RESULTS.md`.
+- **Reranking measurably costs ranking quality in `mock` mode** (recall@1
+  0.917 → 0.833): a lexical stand-in reranker carries less signal than the
+  dense+sparse fusion it overwrites. `retrieval.rerank_fusion: rrf` fuses the two
+  rankings and recovers it fully, but shifts the generator's context enough to
+  degrade the CRAG gate (hallucination 0.000 → 0.032), so `replace` stays the
+  default. Reported rather than hidden — it's an artifact of the mock reranker
+  and the first thing to re-measure on real models.
 - No fine-tuning, auth, or multi-tenancy — out of scope by design.
 
 ## Roadmap & how to get the best results
@@ -318,24 +333,27 @@ Concrete next steps, ordered by return-on-effort, with the knob that drives each
    the hybrid/rerank rows move much more than the lexical mock shows, and a real
    NLI/LLM judge fixes the negation/quantity errors the calibration surfaces.
 2. **Tune retrieval before touching prompts.** `k_dense`/`k_sparse`, `rrf_k`,
-   and `rerank_top_n` are the highest-leverage knobs; watch `recall@k` (pool
-   quality) and `MRR` (ranking) separately. Rerank helps precision most when the
-   fused pool is large (raise `fetch_k`) and `rerank_top_n` is small.
+   and `rerank_top_n` are the highest-leverage knobs; watch `recall@1`/`recall@3`
+   (ranking) and `recall@k` (pool quality) separately — the strict-k columns are
+   the ones with headroom. Add a grid to `eval.sweeps` and run `make sweep`.
 3. **Sweep chunking — it dominates quality.** `chunk_size`, `chunk_overlap`,
-   `strategy`, and `contextual_enrichment` are ablation variables; a small script
-   that grids them and re-runs `make eval` finds the sweet spot fast.
+   `strategy`, and `contextual_enrichment` are ablation variables; add them as an
+   `eval.sweeps` grid and `make sweep NAME=chunking` finds the sweet spot.
 4. **Add HyDE / multi-query retrieval.** Generate a hypothetical answer (or 3
    query paraphrases) and retrieve on those — big recall win on vaguely-worded
    questions. Slots in next to `reformulate.py`.
 5. **GraphRAG / multi-hop path.** A knowledge-graph or parent-document retriever
    for the multi-hop slice; report the multi-hop-slice delta (the harness already
    breaks metrics out by slice, so the win is directly measurable).
-6. **Calibrate the abstention threshold.** `agent.support_threshold` and
-   `nli_entail_threshold` trade hallucination against over-abstention; sweep them
-   and pick the point on the curve your use-case wants (the ablation already
-   reports both `hallucination_rate` and `over_abstention_rate`).
-7. **Harden the semantic cache.** Sweep `cache.similarity_threshold` and watch
-   `cache_false_hits` (already measured) to push hit-rate up without quality loss.
+6. **Calibrate the abstention threshold.** `make sweep NAME=abstention` grids
+   `agent.support_threshold` × `nli_entail_threshold` and reports the best point
+   that doesn't regress safety. On the current gold set the shipped defaults are
+   already optimal — the 10.4% over-abstention is driven by the CRAG gate and the
+   gold set's phrasing, not by these thresholds, so a bigger/realer gold set
+   (item 8) is the actual lever.
+7. **Harden the semantic cache.** `make sweep NAME=cache` grids
+   `cache.similarity_threshold`; watch `cache_false_hits` (already measured) to
+   push hit-rate up without quality loss.
 8. **Scale the gold set from logs.** The single biggest quality lever is more,
    realer eval data — every production failure becomes a permanent gold case, and
    a held-out split prevents overfitting prompts to the examples you re-read.

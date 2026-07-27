@@ -1,9 +1,11 @@
 .DEFAULT_GOAL := help
-PY ?= python
+# Prefer whatever python is on PATH, but don't assume a bare `python` exists —
+# on a stock macOS it resolves to the xcode-select stub and every target dies.
+PY ?= $(shell command -v python3 2>/dev/null || command -v python)
 CONFIG ?= config/config.yaml
 
 .PHONY: help install install-local install-api lint test ingest serve eval bench ablation clean \
-        docker-up docker-down demo calibrate gate report update-baseline history selective dashboard
+        docker-up docker-down demo calibrate gate report update-baseline history selective dashboard sweep
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -50,6 +52,9 @@ update-baseline: ## Re-baseline the regression gate (commit the result in the sa
 
 history: ## Show the experiment registry (recent eval runs)
 	$(PY) -m eval.registry
+
+sweep: ## Grid-sweep thresholds (make sweep NAME=abstention|crag|cache)
+	$(PY) -m eval.sweep $(or $(NAME),abstention) $(CONFIG)
 
 selective: ## Risk–coverage analysis of the abstention gate
 	$(PY) -m eval.selective $(CONFIG)

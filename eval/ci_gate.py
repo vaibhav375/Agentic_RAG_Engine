@@ -24,8 +24,9 @@ from arag.common.config import load_config  # noqa: E402
 from eval.run_eval import run_eval  # noqa: E402
 
 # Metrics where a DROP vs. baseline is a regression, and where a RISE is.
-_HIGHER_IS_BETTER = ["faithfulness", "recall_at_k", "mrr", "correct_abstention_rate",
-                     "answer_correctness", "adversarial_robustness_rate", "citation_precision"]
+_HIGHER_IS_BETTER = ["faithfulness", "recall_at_k", "recall_at_1", "recall_at_3", "mrr",
+                     "correct_abstention_rate", "answer_correctness",
+                     "adversarial_robustness_rate", "citation_precision"]
 _LOWER_IS_BETTER = ["hallucination_rate", "over_abstention_rate"]
 
 
