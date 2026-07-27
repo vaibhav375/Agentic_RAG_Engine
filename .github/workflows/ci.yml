@@ -31,14 +31,18 @@ jobs:
         run: python -m eval.build_gold_set config/config.yaml
 
       # The registry's history.jsonl is what the PR comment's trend is drawn
-      # from, and runners are ephemeral — so carry it across runs as an
-      # artifact. Missing on the very first run; the trend degrades gracefully.
-      - name: Restore eval history
-        uses: actions/download-artifact@v4
+      # from, and runners are ephemeral — so carry it across runs in the cache.
+      # (Not an artifact: download-artifact only sees the *current* run.) The
+      # run-id key always writes; restore-keys pull the newest prior history,
+      # falling back to the default branch's cache for PR runs. Absent on the
+      # very first run — the trend degrades gracefully to a one-line note.
+      - name: Restore eval history (trend across runs)
+        uses: actions/cache@v4
         continue-on-error: true
         with:
-          name: eval-history
-          path: eval/results
+          path: eval/results/history.jsonl
+          key: eval-history-${{ github.run_id }}
+          restore-keys: eval-history-
 
       # Eval-as-regression-gate: run the harness and fail the build if quality
       # regresses past the budget or drifts below the committed baseline. The
@@ -59,15 +63,8 @@ jobs:
           path: |
             eval/results/dashboard.html
             eval/results/ci_gate.json
+            eval/results/history.jsonl
             comment.md
-          if-no-files-found: warn
-
-      - name: Persist eval history
-        uses: actions/upload-artifact@v4
-        with:
-          name: eval-history
-          path: eval/results/history.jsonl
-          overwrite: true
           if-no-files-found: warn
 
       # One sticky comment per PR: find it by the hidden marker and edit in
