@@ -9,7 +9,7 @@
   "hallucination_rate_unanswerable": 0.0,
   "faithfulness": 1.0,
   "answer_relevance": 0.3873,
-  "answer_correctness": 0.3229,
+  "answer_correctness": 0.9,
   "recall_at_k": 1.0,
   "precision_at_k": 0.1434,
   "mrr": 0.9122,
