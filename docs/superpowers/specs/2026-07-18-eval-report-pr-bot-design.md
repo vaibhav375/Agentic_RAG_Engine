@@ -255,12 +255,31 @@ Manual verification before "done":
 
 ### Verification status (2026-07-27)
 
-Locally verified: 5 (18 new unit tests, 54 total, ruff clean) and 6 (gate output
-identical to pre-refactor: hallucination 0.000, abstention 1.000, all 9 metric
-rows `ok` vs. the committed baseline). Criterion 2 verified at the code level —
-a doctored baseline (`answer_correctness` 0.900 → 0.323) renders ❌ on that row,
-flips the header to 🔴, and exits 1.
+All six criteria exercised against `vaibhav375/Agentic_RAG_Engine` (private).
 
-Criteria 1, 3, 4 need a GitHub remote to observe (this working copy is not a git
-repo). One deviation from §3.4: the badge is written by `ci_gate --badge PATH`
-rather than a separate script, so the badge job reuses the same run.
+1. **One comment, edited in place** — ✅ PR #1: the first push created the
+   comment; the second edited it. Comment count stayed at 1.
+2. **Seeded regression fails loudly** — ✅ raising the committed baseline's
+   `answer_correctness` to 0.900 produced a 🔴 FAILED header, ❌ on that row
+   only (the other 8 stayed ✅), and a red `test-and-eval` check. Reverting
+   flipped the same comment to 🟢.
+3. **Badge** — partially: `badge.json` is generated and committed correctly
+   (`0.0%`, brightgreen), and the badge job correctly skips the commit when the
+   value is unchanged. The shields.io image itself cannot render while the repo
+   is private — shields fetches `raw.githubusercontent.com` anonymously. It will
+   render as-is the moment the repo goes public.
+4. **Trend across runs** — ✅ after the §3.3 fix, run #5 restored the prior
+   run's history and rendered `last 2 recorded runs`. See the revision note in
+   §3.3: the artifact-based design in the original spec could never have worked.
+5. **Tests/local** — ✅ 18 new unit tests (54 total), ruff clean, `make report`
+   renders `comment.md` locally.
+6. **No metric moved** — ✅ gate output identical to pre-refactor.
+
+Deviations from the design: the badge is written by `ci_gate --badge PATH`
+rather than a separate script, so the badge job reuses one eval run; and §3.3's
+artifact mechanism was replaced by `actions/cache` (see the note there).
+
+One caveat worth recording: `mrr` came out 0.912 locally (macOS) vs. 0.913 on
+the Linux runner. Mock mode is deterministic *per platform*, not bit-identical
+across them — well inside the 0.05 tolerance, but the "CI reproduces these exact
+numbers" claim in `RESULTS.md` should be read as ±0.001 cross-platform.
