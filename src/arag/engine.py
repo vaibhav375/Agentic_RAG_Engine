@@ -30,17 +30,27 @@ class Components:
     nli: NLIModel
     embedder: Embedder
     cache: object | None = None
+    # The critic and the router can run on their own models (llm.judge_model /
+    # llm.router_model). Both fall back to `llm`, so a single-model setup is
+    # unchanged — and when a separate judge is configured the grader is no longer
+    # the same model that wrote the answer.
+    judge: LanguageModel | None = None
+    router: LanguageModel | None = None
 
 
 def build_components(cfg, store: Store | None = None) -> Components:
     store = store or load_store(cfg)
+    llm = make_llm(cfg)
+    judge = make_llm(cfg, role="judge")
     comp = Components(
         cfg=cfg,
         store=store,
-        llm=make_llm(cfg),
+        llm=llm,
         reranker=make_reranker(cfg),
         nli=make_nli(cfg),
         embedder=store.embedder,
+        judge=judge,
+        router=make_llm(cfg, role="router"),
     )
     if bool(cfg.get("cache.enabled", False)):
         from arag.cache.semantic_cache import build_cache
@@ -158,7 +168,7 @@ def answer_query(comp: Components, query: str) -> Answer:
         max_iter = int(cfg.get("agent.max_iterations", 2))
         if bool(cfg.get("agent.router.enabled", False)):
             with trace.stage("route"):
-                label = classify_query(comp.llm, query, cfg)
+                label = classify_query(comp.router or comp.llm, query, cfg)
             if label == "simple":
                 route, max_iter = "direct", 0  # critique once, but no retrieval retries
         ans = run_self_correction(comp, query, trace=trace, max_iter=max_iter)
