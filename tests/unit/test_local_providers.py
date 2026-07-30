@@ -154,6 +154,59 @@ def test_subset_smaller_than_slice_count_still_covers_all_slices():
     assert len({g.difficulty.value for g in got}) == len({g.difficulty.value for g in gold})
 
 
+# ------------------------------------------------------- role-specific models
+
+
+def test_judge_model_overrides_only_the_judge():
+    """A 3B model judging its own output scored correct answers as hallucinations
+    (docs/local-mode-eval.md), so the critic must be able to run on its own model."""
+    from arag.providers.llm import make_llm
+
+    cfg = _cfg(**{"llm.provider": "ollama", "llm.ollama_model": "llama3.2:3b",
+                  "llm.judge_model": "qwen2.5:7b"})
+    assert make_llm(cfg).ollama_model == "llama3.2:3b"
+    assert make_llm(cfg, role="judge").ollama_model == "qwen2.5:7b"
+
+
+def test_roles_fall_back_to_the_generation_model():
+    from arag.providers.llm import make_llm
+
+    cfg = _cfg(**{"llm.provider": "ollama", "llm.ollama_model": "llama3.2:3b",
+                  "llm.judge_model": None, "llm.router_model": None})
+    for role in (None, "judge", "router"):
+        assert make_llm(cfg, role=role).ollama_model == "llama3.2:3b"
+
+
+def test_role_override_targets_the_providers_model_field():
+    """Each provider keeps its model id in a different field."""
+    from arag.providers.llm import make_llm
+
+    openai = _cfg(**{"llm.provider": "openai", "llm.model": "gpt-4o-mini",
+                     "llm.judge_model": "gpt-4o"})
+    assert make_llm(openai, role="judge").model == "gpt-4o"
+    anthropic = _cfg(**{"llm.provider": "anthropic", "llm.judge_model": "claude-x"})
+    assert make_llm(anthropic, role="judge").anthropic_model == "claude-x"
+
+
+def test_mock_mode_ignores_role_models():
+    """Mock stays deterministic and single-model, so CI numbers don't move."""
+    from arag.providers.llm import MockLLM, make_llm
+
+    cfg = _cfg(**{"llm.provider": "mock", "llm.judge_model": "qwen2.5:7b"})
+    assert isinstance(make_llm(cfg, role="judge"), MockLLM)
+
+
+def test_components_expose_judge_and_router(tmp_path):
+    """The critic and router call sites read comp.judge / comp.router."""
+    from arag.engine import build_components
+    from arag.ingest.index import build_index
+
+    cfg = _cfg(**{"corpus_dir": "tests/fixtures/corpus",
+                  "vector_store.persist_dir": str(tmp_path / "idx")})
+    comp = build_components(cfg, store=build_index(cfg))
+    assert comp.judge is not None and comp.router is not None
+
+
 def test_config_ships_an_openai_compatible_example():
     """The config must document how to reach open-weight hosts, or nobody finds it."""
     raw = json.dumps(load_config("config/config.yaml").as_dict())

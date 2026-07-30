@@ -120,8 +120,10 @@ def evaluate_record(comp, gold: GoldQA, ans: Answer) -> dict:
     if ans.abstained or not ans.answer.strip():
         faithfulness = 1.0 if ans.abstained else 0.0
     else:
+        # Grade with the judge model, not the generator — an answer scored by the
+        # model that wrote it is the self-preference bias this harness avoids.
         crit = critique_answer(
-            comp.llm,
+            comp.judge or comp.llm,
             ans.answer,
             ans.contexts,
             cfg.with_overrides({"agent.critic": faith_method}),

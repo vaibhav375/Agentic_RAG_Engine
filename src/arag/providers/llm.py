@@ -283,8 +283,34 @@ def _extract_json(text: str) -> str:
     return m.group(1) if m else text
 
 
-def make_llm(cfg) -> LanguageModel:
+# Which config field holds the model id, per provider — so a role override knows
+# what to replace.
+_MODEL_FIELD = {
+    "openai": "llm.model",
+    "anthropic": "llm.anthropic_model",
+    "ollama": "llm.ollama_model",
+}
+
+
+def make_llm(cfg, role: str | None = None) -> LanguageModel:
+    """Build the LLM for a role: None (generation), "judge", or "router".
+
+    `llm.judge_model` / `llm.router_model` let the critic and the router run on a
+    different model than the generator. That matters in both directions:
+      * a stronger judge than generator — measured on `llama3.2:3b`, a 3B critic
+        mis-scores correct-but-elaborated answers, which showed up as a 31%
+        hallucination rate and 33% over-abstention that were both judge error
+        (see docs/local-mode-eval.md);
+      * a *different* judge than generator, which reduces the LLM-as-judge
+        self-preference bias the calibration section warns about.
+    Falls back to the generation model when the role's field is unset.
+    """
     provider = cfg.get("llm.provider", "mock")
     if provider == "mock":
         return MockLLM()
+    if role:
+        override = cfg.get(f"llm.{role}_model")
+        field = _MODEL_FIELD.get(provider)
+        if override and field:
+            cfg = cfg.with_overrides({field: override})
     return PromptLLM(cfg)
