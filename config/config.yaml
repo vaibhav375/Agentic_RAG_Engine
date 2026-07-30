@@ -161,6 +161,19 @@ eval:
   # LLM-as-judge that drives the online loop, so we don't grade the loop with its
   # own grader. Set "llm" or "both" to compare.
   faithfulness_method: nli
+  # What counts as a hallucination.
+  #   strict   -> any claim not fully entailed by the context (the original rule).
+  #               Scores "correct answer + one aside the sources don't mention"
+  #               the same as an invented answer.
+  #   severity -> the answer contradicts the sources, or its core is ungrounded.
+  #               An aside is still reported via unsupported_claim_rate, but it
+  #               isn't a hallucination on its own.
+  # Both are computed every run (`hallucination` and `hallucination_strict`), so
+  # switching modes can't quietly improve the headline number.
+  hallucination:
+    mode: severity                    # severity | strict
+    min_contradicted_fraction: 0.001  # any contradicted claim -> fabrication
+    min_support_fraction: 0.5         # below this, the core isn't grounded
   # Threshold grids for `make sweep` (python -m eval.sweep <name>). Each entry is
   # {dotted config key: [values]}; the sweep runs the full pipeline at every
   # combination and reports the best point that doesn't regress safety.

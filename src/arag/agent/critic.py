@@ -16,8 +16,10 @@ reformulates and retries; if it still can't ground the answer, it abstains.
 
 from __future__ import annotations
 
+import re
+
 from arag.common.schemas import ClaimJudgement, CritiqueResult, RetrievedChunk
-from arag.providers.base import LanguageModel, NLIModel
+from arag.providers.base import LanguageModel, NLIModel, split_sentences
 
 
 def critique_answer(
@@ -47,18 +49,24 @@ def critique_answer(
     if not claims:
         return CritiqueResult(supported=False, support_fraction=0.0, missing_info=None)
 
+    contra_thresh = float(cfg.get("agent.nli_contradiction_threshold", 0.5))
     judgements: list[ClaimJudgement] = []
     for claim in claims:
         llm_ok = nli_ok = None
         score = None
+        contradiction = None
         if mode in ("llm", "both"):
             s, reason, conf = llm.judge_claim(claim, context_text)
             llm_ok = s
             score = conf
         if mode in ("nli", "both") and nli is not None:
-            res = _max_entailment(nli, contexts, claim)
+            res, contra = _entailment_and_contradiction(
+                nli, contexts, claim, cfg.get("agent.nli_premise", "paragraph")
+            )
             nli_ok = res >= nli_thresh
             score = res if score is None else score
+            # Only meaningful when the claim isn't entailed; see the helper.
+            contradiction = 0.0 if nli_ok else contra
 
         if mode == "llm":
             supported = bool(llm_ok)
@@ -70,13 +78,19 @@ def critique_answer(
             supported = bool(llm_ok) and bool(nli_ok)
             method = "both"
 
+        contradicted = contradiction is not None and contradiction >= contra_thresh
         judgements.append(
             ClaimJudgement(
                 claim=claim,
                 supported=supported,
-                reason=None if supported else "unsupported by retrieved context",
+                reason=None if supported else (
+                    "contradicted by retrieved context" if contradicted
+                    else "not stated in retrieved context"
+                ),
                 method=method,
                 score=score,
+                contradiction=contradiction,
+                contradicted=contradicted,
             )
         )
 
@@ -90,13 +104,72 @@ def critique_answer(
         support_fraction=round(fraction, 4),
         claims=judgements,
         missing_info=missing,
+        contradicted_fraction=round(
+            sum(j.contradicted for j in judgements) / len(judgements), 4
+        ),
     )
 
 
 def _max_entailment(nli: NLIModel, contexts: list[RetrievedChunk], claim: str) -> float:
     """A claim is supported if ANY retrieved passage entails it."""
-    best = 0.0
+    return _entailment_and_contradiction(nli, contexts, claim)[0]
+
+
+def _premise_units(text: str, granularity: str = "paragraph") -> list[str]:
+    """Split a retrieved chunk into premises an NLI model can actually judge.
+
+    NLI cross-encoders are trained on sentence-pair-scale inputs. Handing one a
+    multi-paragraph chunk pushes it out of distribution and it drifts toward
+    "contradiction" — measured on this corpus with `nli-deberta-v3-base` and a
+    claim quoted almost verbatim from the source:
+
+        whole 1200-char chunk : entailment 0.138, contradiction 0.499  (wrong)
+        the paragraph in it   : entailment 0.993, contradiction 0.001  (right)
+
+    So the claim is scored against each paragraph and the best match wins.
+    `granularity: chunk` restores the old whole-chunk behavior for comparison.
+    """
+    if granularity == "chunk":
+        return [text]
+    flat = re.sub(r"\s+", " ", text).strip()
+    if not flat:
+        return []
+    # Blank lines don't survive chunking, so split on sentences and slide a small
+    # window over them: a claim usually needs one or two adjacent sentences as its
+    # premise, and a window keeps the pair together without dragging in the whole
+    # chunk.
+    sentences = [s for s in split_sentences(flat) if s.strip()]
+    if len(sentences) <= 1:
+        return [flat]
+    units = list(sentences)
+    units += [f"{a} {b}" for a, b in zip(sentences, sentences[1:], strict=False)]
+    # Drop headings and stubs — too short to entail anything on their own.
+    return [u for u in units if len(u.split()) >= 4] or [flat]
+
+
+def _entailment_and_contradiction(
+    nli: NLIModel, contexts: list[RetrievedChunk], claim: str, granularity: str = "paragraph"
+) -> tuple[float, float]:
+    """Best entailment and best contradiction across the retrieved passages.
+
+    Keeping contradiction is what lets a caller separate two very different
+    failures that "unsupported" alone conflates:
+      * *contradicted* — the sources say otherwise. That is fabrication.
+      * *neutral* — the sources simply don't cover it. An aside beyond the
+        context, which may well be true.
+    Contradiction is read off the *best-matching* premise, not maxed across all
+    of them: "the passage most relevant to this claim says otherwise" is evidence
+    of fabrication, whereas an unrelated passage disagreeing is noise.
+    """
+    best_entail = 0.0
+    best_contra = 0.0
     for rc in contexts:
-        res = nli.entail(rc.chunk.text, claim)
-        best = max(best, res.entailment)
-    return best
+        for premise in _premise_units(rc.chunk.text, granularity):
+            res = nli.entail(premise, claim)
+            if res.entailment > best_entail:
+                best_entail = res.entailment
+                best_contra = res.contradiction
+            elif best_entail == 0.0:
+                # Nothing entails it yet — keep the strongest disagreement seen.
+                best_contra = max(best_contra, res.contradiction)
+    return best_entail, best_contra
