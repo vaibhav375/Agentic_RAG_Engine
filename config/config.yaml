@@ -28,11 +28,27 @@ embeddings:
 # ----- LLM (generation + critic + reformulation) ---------------------------
 llm:
   provider: mock                 # mock | openai | anthropic | ollama
-  model: gpt-4o-mini             # openai
+  model: gpt-4o-mini             # openai (also: the model id for any OpenAI-
+                                 # compatible host configured via base_url)
   anthropic_model: claude-3-5-sonnet-latest
-  ollama_model: llama3.1:8b
+  ollama_model: qwen3:4b         # open-weight, runs locally, no key
+  # `provider: openai` speaks to any OpenAI-compatible endpoint. Leave base_url
+  # empty for OpenAI itself; set it to reach open-weight models too large to run
+  # locally (Kimi K2 is ~1T params MoE — open weights, but not laptop-sized):
+  #   Moonshot (Kimi):  base_url https://api.moonshot.ai/v1        model kimi-k2-0711-preview
+  #   OpenRouter:       base_url https://openrouter.ai/api/v1      model moonshotai/kimi-k2
+  #   Together:         base_url https://api.together.xyz/v1       model Qwen/Qwen3-235B-A22B
+  #   local vLLM:       base_url http://localhost:8000/v1          (api_key_env unused)
+  base_url: ""
+  api_key_env: OPENAI_API_KEY    # which env var holds the key for base_url
   temperature: 0.0
-  max_tokens: 1024
+  max_tokens: 1024              # Ollama: sent as num_predict. Uncapped local
+                                # models run past any timeout.
+  timeout_seconds: 300          # local models are slow; the loop makes many calls
+  # Reasoning models (qwen3, deepseek-r1) narrate before answering, which lands
+  # in the answer text and wrecks citation parsing and token-F1. null = don't
+  # send the field (Ollama < 0.9 rejects it); false = ask for no thinking.
+  think: false
   # A cheaper/faster model for the critic + router if you want a split. Falls
   # back to `model` when null.
   judge_model: null

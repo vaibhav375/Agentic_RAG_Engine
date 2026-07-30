@@ -19,11 +19,50 @@ from eval.build_gold_set import load_gold
 from eval.metrics import aggregate, evaluate_record
 
 
+def stratified_subset(gold: list, n: int) -> list:
+    """First `n` questions, but proportionally across difficulty slices.
+
+    The gold file is grouped by difficulty (all 40 easy questions first), so a
+    plain `gold[:n]` subset is 100% easy — it reports `hallucination_rate` and
+    `correct_abstention_rate` without a single unanswerable or adversarial
+    question behind them. Any subset run has to keep every slice represented or
+    the numbers aren't comparable to a full run.
+
+    Allocation is largest-remainder proportional with at least one question per
+    slice, and deterministic: it takes each slice's questions in file order.
+    """
+    if n >= len(gold) or n <= 0:
+        return gold
+    by_slice: dict[str, list] = {}
+    for g in gold:
+        by_slice.setdefault(g.difficulty.value, []).append(g)
+
+    # Proportional share, floored, then hand out the remaining seats to the
+    # largest fractional remainders (largest-remainder method).
+    exact = {k: len(v) * n / len(gold) for k, v in by_slice.items()}
+    take = {k: max(1, int(v)) for k, v in exact.items()}
+    while sum(take.values()) > n:  # over-allocated by the min-1 guarantee
+        k = max(take, key=lambda k: (take[k] - exact[k], k))
+        if take[k] > 1:
+            take[k] -= 1
+        else:
+            break
+    for k in sorted(by_slice, key=lambda k: (-(exact[k] - int(exact[k])), k)):
+        if sum(take.values()) >= n:
+            break
+        if take[k] < len(by_slice[k]):
+            take[k] += 1
+
+    chosen = [g for k, items in by_slice.items() for g in items[: take[k]]]
+    order = {id(g): i for i, g in enumerate(gold)}
+    return sorted(chosen, key=lambda g: order[id(g)])
+
+
 def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict:
     gold = load_gold(cfg.get("eval.gold_path", "data/eval/gold_qa.jsonl"))
     subset = cfg.get("eval.subset")
     if subset:
-        gold = gold[: int(subset)]
+        gold = stratified_subset(gold, int(subset))
 
     if comp is None:
         store = build_index(cfg) if rebuild else None

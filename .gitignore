@@ -10,6 +10,9 @@ venv/
 
 # Project artifacts
 .arag_index/
+# index built with real (sentence-transformers) embeddings
+# NB: git has no trailing comments on pattern lines — they become part of the pattern
+.arag_index_local/
 eval/results/*.json
 eval/results/*.png
 eval/results/dashboard.html
