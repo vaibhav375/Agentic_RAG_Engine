@@ -120,6 +120,15 @@ class PromptLLM(LanguageModel):
         self.ollama_model = llm.get("ollama_model", "llama3.1:8b")
         self.temperature = float(llm.get("temperature", 0.0))
         self.max_tokens = int(llm.get("max_tokens", 1024))
+        # Any OpenAI-compatible host (Moonshot/Kimi, OpenRouter, Together, Groq,
+        # vLLM). Empty base_url = api.openai.com.
+        self.base_url = llm.get("base_url") or os.environ.get("ARAG_LLM_BASE_URL", "")
+        self.api_key_env = llm.get("api_key_env") or "OPENAI_API_KEY"
+        # Local models are far slower than hosted ones, and the self-correction
+        # loop issues many calls per query, so this needs to be tunable.
+        self.timeout_seconds = float(llm.get("timeout_seconds", 120))
+        # None = don't send the field at all (older Ollama servers reject it).
+        self.think = llm.get("think")
         self._client = None
 
     # -- transport ---------------------------------------------------------- #
@@ -133,10 +142,20 @@ class PromptLLM(LanguageModel):
         raise ValueError(f"Unknown llm provider: {self.provider}")
 
     def _openai(self, system: str, user: str) -> str:
+        """OpenAI, and every OpenAI-compatible endpoint.
+
+        `llm.base_url` + `llm.api_key_env` point this at any provider speaking
+        the same protocol — Moonshot (Kimi), OpenRouter, Together, Groq, or a
+        local vLLM/llama.cpp server — so open-weight models too large to run on
+        this machine are reachable without a new backend.
+        """
         if self._client is None:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            self._client = OpenAI(
+                api_key=os.environ.get(self.api_key_env) or "not-needed",
+                base_url=self.base_url or None,
+            )
         resp = self._client.chat.completions.create(
             model=self.model,
             temperature=self.temperature,
@@ -163,21 +182,32 @@ class PromptLLM(LanguageModel):
         import httpx
 
         base = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        r = httpx.post(
-            f"{base}/api/chat",
-            json={
-                "model": self.ollama_model,
-                "stream": False,
-                "options": {"temperature": self.temperature},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
+        payload: dict = {
+            "model": self.ollama_model,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                # Ollama calls this num_predict. Without it the model is
+                # uncapped: a reasoning model will happily narrate past any
+                # timeout, which is exactly how the first local run died.
+                "num_predict": self.max_tokens,
             },
-            timeout=120,
-        )
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        # Reasoning models (qwen3, deepseek-r1, …) emit a chain of thought that
+        # would land in the answer text and wreck citation parsing and token-F1.
+        # Ollama >= 0.9 lets us switch it off per request; older servers 400 on
+        # the field, so only send it when explicitly configured.
+        if self.think is not None:
+            payload["think"] = self.think
+        r = httpx.post(f"{base}/api/chat", json=payload, timeout=self.timeout_seconds)
         r.raise_for_status()
-        return r.json()["message"]["content"]
+        message = r.json()["message"]
+        # When thinking is on, Ollama returns it separately — never concatenate it.
+        return message.get("content", "")
 
     # -- tasks -------------------------------------------------------------- #
     def generate_answer(self, query: str, contexts: list[tuple[str, str]]) -> GeneratedAnswer:
