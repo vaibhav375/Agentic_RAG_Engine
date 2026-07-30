@@ -49,9 +49,18 @@ llm:
   # in the answer text and wrecks citation parsing and token-F1. null = don't
   # send the field (Ollama < 0.9 rejects it); false = ask for no thinking.
   think: false
-  # A cheaper/faster model for the critic + router if you want a split. Falls
-  # back to `model` when null.
+  # Separate models for the critic and the router. Falls back to the generation
+  # model when null. Set the model id in the form your provider expects (an
+  # Ollama tag for provider: ollama, an API model id otherwise).
+  #
+  # A *stronger* judge than generator is the highest-leverage local-mode knob:
+  # with a 3B model judging its own output the critic mis-scored correct answers,
+  # producing 31% "hallucination" and 33% over-abstention that were both judge
+  # error, not fabrication (docs/local-mode-eval.md). A different judge also
+  # reduces LLM-as-judge self-preference bias.
+  #   e.g. with provider: ollama -> judge_model: qwen2.5:7b
   judge_model: null
+  # The router only classifies query complexity, so it can be smaller/cheaper.
   router_model: null
 
 # ----- Chunking (first-class ablation variable) ----------------------------

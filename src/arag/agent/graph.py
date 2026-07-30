@@ -60,7 +60,7 @@ def run_self_correction(comp, query: str, trace: Trace | None = None, max_iter: 
     if grade is not None:
         ans.retrieval_grade, ans.retrieval_grade_score = grade.grade, grade.score
     with trace.stage("critique", iteration=0):
-        critique = critique_answer(comp.llm, ans.answer, ans.contexts, cfg, nli=comp.nli)
+        critique = critique_answer(comp.judge or comp.llm, ans.answer, ans.contexts, cfg, nli=comp.nli)
     iterations = 1
     prior_queries = [query]
 
@@ -81,7 +81,7 @@ def run_self_correction(comp, query: str, trace: Trace | None = None, max_iter: 
         if first_grade is not None:
             ans.retrieval_grade, ans.retrieval_grade_score = first_grade.grade, first_grade.score
         with trace.stage("critique", iteration=iterations):
-            critique = critique_answer(comp.llm, ans.answer, ans.contexts, cfg, nli=comp.nli)
+            critique = critique_answer(comp.judge or comp.llm, ans.answer, ans.contexts, cfg, nli=comp.nli)
         iterations += 1
 
     ans.iterations = iterations
