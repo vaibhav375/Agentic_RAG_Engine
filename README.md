@@ -371,11 +371,14 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
   MRR 0.913 → 1.000). Diagnosis: every flagged answer was hand-checked against
   the corpus and is factually correct — the model answers correctly and then adds
   an explanatory clause that isn't in the retrieved context, and one such clause
-  flags the whole record. Upgrading the grader does **not** fix this: a 7B judge
-  (`qwen2.5:7b`) left the per-answer flag rate unchanged (0.625 → 0.700) at 7× the
-  latency, so the bottleneck is generation style plus a strict claim-level metric,
-  not judge capability. `agent.critic: nli` is the measured best local config.
-  Both the original diagnosis and its refutation are recorded in that doc.
+  flags the whole record. Two fixes were tried and **both failed**: a 7B judge
+  left the per-answer flag rate unchanged (0.625 → 0.700) at 7× the latency, and a
+  stricter answer prompt made it worse (0.545 → 0.727) by crowding out the
+  original instructions on a 3B model. Across five configurations the flag rate
+  never left 0.545–0.727, which points at the metric — flagging a whole record for
+  one unsupported aside — rather than at the pipeline. Whether that *should* count
+  as a hallucination is an open definition decision, documented not silently
+  changed. `agent.critic: nli` is the measured best local config.
   This bullet previously read "the direction and mechanism hold in every mode";
   measurement disproved half of it.
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
