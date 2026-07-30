@@ -171,23 +171,98 @@ going beyond it, or weighting by claim count instead of any-claim-fails. That
 changes the definition of the project's headline metric after it has been
 published, so it is left as an explicit decision, not made silently.
 
+## Third correction: severity metric + NLI premise granularity
+
+The open definition question — *should a correct, grounded answer with one
+unsupported aside count as a hallucination?* — was answered **no**. Implemented,
+plus a real bug found on the way.
+
+`eval.hallucination.mode: severity` (new default) flags an answer when it
+**contradicts** the sources or its **core is ungrounded**
+(`faithfulness < min_support_fraction`), rather than whenever any single claim
+isn't entailed. `mode: strict` keeps the old rule, and **both are computed every
+run** (`hallucination_rate` and `hallucination_rate_strict`) so a definition
+change can't quietly improve a headline number.
+
+This requires separating *contradicted* from *merely-not-stated*, which the NLI
+model reports directly and the critic was discarding. Real deberta separates them
+cleanly — against "The default color is blue.":
+
+| Claim | entail | contra | verdict |
+|---|---|---|---|
+| "…is red." | 0.000 | 1.000 | fabrication |
+| "…is blue." | 0.998 | 0.000 | supported |
+| "Colors are configurable per widget." | 0.002 | 0.001 | aside — excused |
+
+### The bug: NLI premises were the wrong size
+
+The first severity run barely moved (flag rate 0.545 → 0.455) and still flagged
+answers verified correct by hand, with contradiction scores of 0.499 and 0.881.
+Cause: the critic passed **whole retrieved chunks** as the NLI premise. Cross-
+encoders are trained on sentence-pair-scale input; a multi-paragraph chunk is out
+of distribution and the model drifts toward "contradiction":
+
+| Premise for a claim quoted near-verbatim from the source | entail | contra |
+|---|---|---|
+| whole 1200-char chunk | 0.138 | **0.499** |
+| the paragraph containing it | **0.993** | 0.001 |
+
+Premises are now sentences and adjacent sentence pairs (`agent.nli_premise`,
+`chunk` restores the old behavior). A first attempt at splitting on blank lines
+was **inert** — chunk text keeps line wrapping but loses blank lines, so it
+produced one unit per chunk. Verified by checking the unit count, not by assuming.
+
+### Result
+
+| | strict rule | **severity + premise fix** |
+|---|---|---|
+| hallucination_rate | 0.375 | **0.188** |
+| per-answer flag rate | 0.545 | **0.273** |
+| contradicted_claim_rate | 0.151 (mostly false) | **0.021** |
+| over-abstention / abstention / robustness | 0.083 / 1.000 / 1.000 | 0.083 / 1.000 / 1.000 |
+
+Three records that were flagged are now correctly clean; the false contradictions
+are gone (0.151 → 0.021). **Mock numbers did not move at all** (0.306 → 0.000
+across the ablation, adversarial robustness still 1.000) — checked specifically,
+because a metric change that improves the headline benchmark would be suspect.
+Mock fabrications are *mostly* ungrounded, so they fail the core-support branch
+exactly as they failed the strict rule.
+
+### What still limits it: entailment false-negatives
+
+The three remaining flags are **not** contradiction false-positives any more —
+they're entailment false-negatives. deberta rejects a claim that narrows a
+premise's condition:
+
+| Premise: "If the incoming body is missing a required field **or a field has the wrong type**, Breeze returns a 422…" | entail |
+|---|---|
+| "Breeze returns a 422 … lists each invalid field and the reason." | **0.993** |
+| "**If a JSON body is missing a required field,** Breeze returns a 422 …" | **0.000** |
+
+That is a model-capability limit, not a text-splitting problem — no amount of
+premise surgery fixes it. It also exposes a tension in the comparability fix:
+deterministic sentence splitting made the metric model-independent but produces
+**compound, conditional** claims, which are exactly what this NLI model handles
+worst. LLM claim extraction produced more atomic claims but wasn't reproducible.
+Resolving that properly needs either a stronger NLI model or deterministic
+*clause-level* decomposition.
+
 ### Best local configuration measured so far
 
 Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
 Versus the first local baseline (3B judge, LLM claims):
 
-| | first baseline | **run C** |
+| | first baseline | **best (severity + premise fix)** |
 |---|---|---|
-| hallucination_rate | 0.313 | 0.375 |
+| hallucination_rate | 0.313 | **0.188** |
 | over_abstention_rate | 0.333 | **0.083** |
 | answer_correctness | 0.201 | **0.323** |
 | correct_abstention / adv. robustness | 1.000 / 1.000 | **1.000 / 1.000** |
 | p50 latency | 73 s | **28 s** |
 
 Four fewer correct answers thrown away, 60% higher answer correctness, 2.6×
-faster, with the safety gates intact. The nominal hallucination rate is slightly
-higher purely because it answers more questions — the per-answer flag rate went
-*down* (0.625 → 0.545).
+faster, hallucination down 40% relative, with the safety gates intact — and it
+answers 11/16 questions instead of 8/16 while doing it.
 
 ### Measurement caveat introduced by this change
 
@@ -211,13 +286,12 @@ Revised twice now. Two hypotheses were tested and both failed: ~~a stronger
 judge~~ (no effect on the flag rate) and ~~a stricter answer prompt~~ (actively
 worse). ~~Pin claim extraction~~ is done. What remains:
 
-1. **Decide what the metric should count** — now the blocker, not a nice-to-have.
-   "Correct, grounded, plus one unsupported aside" scores identically to a
-   fabrication, and five configurations could not move the flag rate out of
-   0.545–0.727. Either accept that as a small model's honest score, or give
-   claim-level support a severity notion (flag only claims that *contradict*
-   context; or weight by claim count rather than any-claim-fails). This redefines
-   the headline metric, so it needs an explicit decision.
+1. ~~Decide what the metric should count~~ — **decided and implemented**: an
+   aside is not a fabrication. `eval.hallucination.mode: severity`, both
+   definitions reported every run. Remaining work here is the entailment
+   false-negative problem: either a stronger NLI model, or deterministic
+   *clause-level* claim decomposition so conditional compound claims stop being
+   scored as a single un-entailed unit.
 2. **Try a 7–8B instruct generator** (not judge — generator). Judge strength was
    ruled out; generation quality has not been tested, and it is the remaining
    pipeline-side variable. `qwen2.5:7b` is already pulled.

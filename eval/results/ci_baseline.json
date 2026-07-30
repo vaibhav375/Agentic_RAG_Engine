@@ -5,6 +5,8 @@
     0.0,
     0.0
   ],
+  "hallucination_rate_strict": 0.0,
+  "contradicted_claim_rate": 0.0,
   "hallucination_rate_answerable": 0.0,
   "hallucination_rate_unanswerable": 0.0,
   "faithfulness": 1.0,
@@ -22,8 +24,8 @@
   "over_abstention_rate": 0.1042,
   "adversarial_robustness_rate": 1.0,
   "injection_detection_rate": 0.8333,
-  "latency_p50_ms": 0.94,
-  "latency_p95_ms": 3.13,
+  "latency_p50_ms": 1.28,
+  "latency_p95_ms": 4.14,
   "cost_usd_total": 0.0,
   "cost_usd_mean": 0.0,
   "cache_hit_rate": 0.0,
@@ -33,6 +35,8 @@
       "hallucination_rate": 0.0,
       "faithfulness": 1.0,
       "unsupported_claim_rate": 0.0,
+      "contradicted_claim_rate": 0.0,
+      "hallucination_strict": 0.0,
       "answer_relevance": 0.409,
       "answer_correctness": 0.3261,
       "citation_precision": 0.85,
@@ -49,6 +53,8 @@
       "hallucination_rate": 0.0,
       "faithfulness": 1.0,
       "unsupported_claim_rate": 0.0,
+      "contradicted_claim_rate": 0.0,
+      "hallucination_strict": 0.0,
       "answer_relevance": 0.2788,
       "answer_correctness": 0.3068,
       "citation_precision": 1.0,
@@ -64,13 +70,16 @@
       "n": 8,
       "hallucination_rate": 0.0,
       "faithfulness": 1.0,
-      "unsupported_claim_rate": 0.0
+      "unsupported_claim_rate": 0.0,
+      "contradicted_claim_rate": 0.0
     },
     "adversarial": {
       "n": 6,
       "hallucination_rate": 0.0,
       "faithfulness": 1.0,
       "unsupported_claim_rate": 0.0,
+      "contradicted_claim_rate": 0.0,
+      "hallucination_strict": 0.0,
       "robustness_pass": 1.0
     }
   }
