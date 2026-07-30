@@ -362,10 +362,18 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
 
 ## Notes / limitations
 
-- `mock` mode simulates a naive generator that fabricates on weak context so the
-  eval measures a real hallucination signal; absolute numbers shift with real
-  models, but the *direction and mechanism* (self-correction ↓ hallucination,
-  abstention on unanswerables) hold in every mode.
+- **The headline hallucination numbers are `mock`-mode results and do not
+  reproduce on a small local model.** Measured on `llama3.2:3b` (16-question
+  stratified subset): hallucination 0.313, over-abstention 0.333 — see
+  [`docs/local-mode-eval.md`](docs/local-mode-eval.md). What *does* hold is
+  abstention (2/2 unanswerable declined) and injection robustness (2/2), and
+  retrieval genuinely improves with real embeddings (recall@1 0.833 → 0.958,
+  MRR 0.913 → 1.000). Diagnosis: every flagged answer was hand-checked against
+  the corpus and is factually correct — a 3B *judge* mis-scores correct-but-
+  elaborated claims, so the critic is the bottleneck rather than the generator.
+  The fix path (split `llm.judge_model` from the generator, calibrate it, re-sweep
+  thresholds) is in that doc. This claim previously read "the direction and
+  mechanism hold in every mode"; measurement disproved half of it.
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
   neural embeddings — see the note in `RESULTS.md`.
 - **Reranking measurably costs ranking quality in `mock` mode** (recall@1
