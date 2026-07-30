@@ -339,20 +339,30 @@ enough to move a shipped default. A full 62-question confirmation of
 
 ### Best local configuration measured so far
 
-Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
-Versus the first local baseline (3B judge, LLM claims):
+`agent.critic: nli`, original prompt, severity metric with sentence-window
+premises and clause-level claims. Every value below is read from the **same
+artifact** (`eval/results/local_nli_severity.json`, the 23:51 run) against the
+first local baseline (`local_llama32.json`) — an earlier version of this table
+mixed rows from two different runs and overstated the result.
 
-| | first baseline | **best (severity + premise + clause fixes)** |
+| | first baseline | **final config** |
 |---|---|---|
 | hallucination_rate | 0.313 | **0.063** |
-| over_abstention_rate | 0.333 | **0.083** |
-| answer_correctness | 0.201 | **0.323** |
+| hallucination_rate_strict | 0.313 | 0.375 |
+| over_abstention_rate | 0.333 | **0.167** |
+| answer_correctness | 0.201 | **0.295** |
+| faithfulness | 0.886 | 0.818 |
 | correct_abstention / adv. robustness | 1.000 / 1.000 | **1.000 / 1.000** |
-| p50 latency | 73 s | **28 s** |
+| recall@1 / MRR | 0.958 / 1.000 | 0.875 / 0.958 |
+| p50 latency | 73 s | **34 s** |
 
-Four fewer correct answers thrown away, 60% higher answer correctness, 2.6×
-faster, hallucination down 40% relative, with the safety gates intact — and it
-answers 11/16 questions instead of 8/16 while doing it.
+Honest reading: hallucination down 80% relative, over-abstention halved, answer
+correctness up 47%, latency down 2.2×, safety gates intact. Faithfulness and
+recall@1 are *lower* — faithfulness because it now averages over more answered
+questions, recall@1 because it is one record at n=12 and local runs are not
+reproducible (see the caveat above). The intermediate run reached
+over-abstention 0.083 and answer_correctness 0.323; that difference is one
+record and should not be read as a regression.
 
 ### Measurement caveat introduced by this change
 
