@@ -304,6 +304,39 @@ one record is ±6 pp. **Compare configurations within a single run** (as the tab
 above does, strict vs severity on identical answers) rather than across runs, and
 treat cross-run deltas smaller than ~2 records as noise.
 
+## Threshold sweep on real models
+
+`make sweep NAME=abstention` run in local mode (`llama3.2:3b`, `critic: nli`,
+16-question subset, 9 grid points ≈ 100 min). These thresholds had only ever been
+fitted against mock behavior — the last mock-tuned assumption in the pipeline.
+
+| `support_threshold` | overAbst ↓ | ansF1 ↑ | faith ↑ | hallu ↓ | abstOK |
+|---|---|---|---|---|---|
+| **0.3** | **0.083** | **0.302** | 0.807 | 0.062 | 1.000 |
+| 0.5 (shipped) | 0.167 | 0.295 | 0.818 | 0.062 | 1.000 |
+| 0.7 | 0.250 | 0.269 | 0.849 | 0.062 | 1.000 |
+
+Two findings, of very different strength.
+
+**`nli_entail_threshold` is inert.** All three values (0.3 / 0.5 / 0.7) produce
+byte-identical results at every support level. deberta's entailment scores are
+saturated near 0 and 1 — the probes throughout this document read 0.000, 0.992,
+0.998 — so nothing lands in the band the threshold moves through. The knob has no
+purchase on this NLI model, and tuning effort should go elsewhere. This is the
+sturdier of the two results: it is nine identical measurements, not a difference.
+
+**`support_threshold` trades over-abstention against faithfulness, monotonically.**
+Lowering it answers more questions: over-abstention halves, answer correctness
+rises, hallucination stays flat at 0.062 and correct-abstention stays 1.000.
+Faithfulness drifts down slightly because it now averages over more answered
+questions.
+
+*But 0.167 → 0.083 is exactly one record at n=12 answerable*, inside the
+run-to-run noise documented above. The monotone trend across three levels
+(2 records end to end) is better evidence than any single pair, but it is not
+enough to move a shipped default. A full 62-question confirmation of
+`support_threshold` 0.5 vs 0.3 is the deciding experiment.
+
 ### Best local configuration measured so far
 
 Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
@@ -355,8 +388,10 @@ worse). ~~Pin claim extraction~~ is done. What remains:
    It would measure judge/human agreement directly instead of inferring it from
    downstream rates — and given two failed inferences, direct measurement is
    overdue.
-4. **Re-sweep thresholds under local mode** (`make sweep NAME=abstention`); the
-   defaults were fitted on mock behavior. Budget ~10 min per NLI-critic run.
+4. ~~Re-sweep thresholds under local mode~~ — **done**, see the sweep section.
+   `nli_entail_threshold` turned out inert on this NLI model;
+   `support_threshold` shows a monotone trade-off whose winning point is within
+   noise at n=16 and is being confirmed on the full gold set.
 5. **Use `agent.critic: nli` for local mode** — the measured best config. Do *not*
    use a 7B judge here (strictly dominated at 7× the latency), and do not tighten
    the answer prompt (measured worse).
