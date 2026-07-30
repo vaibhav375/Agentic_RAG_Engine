@@ -51,6 +51,12 @@ class ClaimJudgement(BaseModel):
     reason: str | None = None
     method: str = "llm"  # llm | nli
     score: float | None = None
+    # Severity. "Unsupported" covers two different failures: the sources say
+    # otherwise (contradicted -> fabrication) versus the sources are silent
+    # (an aside beyond the context, which may still be true). Only available
+    # from the NLI signal, which reports contradiction probability directly.
+    contradiction: float | None = None
+    contradicted: bool = False
 
 
 class CritiqueResult(BaseModel):
@@ -58,6 +64,7 @@ class CritiqueResult(BaseModel):
     support_fraction: float
     claims: list[ClaimJudgement] = Field(default_factory=list)
     missing_info: str | None = None     # what to go find on the next iteration
+    contradicted_fraction: float = 0.0  # share of claims the sources contradict
     should_abstain: bool = False
 
 
