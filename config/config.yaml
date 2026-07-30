@@ -161,6 +161,11 @@ eval:
   # LLM-as-judge that drives the online loop, so we don't grade the loop with its
   # own grader. Set "llm" or "both" to compare.
   faithfulness_method: nli
+  # How an answer is split into claims for the NLI metric. `clause` strips
+  # framing conditionals ("If X, Y" -> assert Y) and splits trailing so/because
+  # clauses; entailment models score compound conditionals far worse than the
+  # clause alone (measured 0.000 vs 0.992). `sentence` keeps whole sentences.
+  claim_decomposition: clause     # clause | sentence
   # What counts as a hallucination.
   #   strict   -> any claim not fully entailed by the context (the original rule).
   #               Scores "correct answer + one aside the sources don't mention"

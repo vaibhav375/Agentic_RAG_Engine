@@ -247,14 +247,71 @@ worst. LLM claim extraction produced more atomic claims but wasn't reproducible.
 Resolving that properly needs either a stronger NLI model or deterministic
 *clause-level* decomposition.
 
+## Fourth correction: clause-level claim decomposition
+
+The entailment false-negatives above were compound conditional claims. Fixed by
+splitting claims at clause level (`eval.claim_decomposition: clause`, default) —
+a leading framing conditional is stripped so the main clause carries the
+assertion, and trailing `so`/`because` clauses become their own claims. All
+deterministic, no LLM, so the metric stays reproducible.
+
+The probe that motivated it, against a premise that supports the statement:
+
+| Hypothesis | entail |
+|---|---|
+| "If a JSON body is missing a required field, Breeze returns a 422…" | 0.000 |
+| main clause alone: "Breeze returns a 422…" | **0.992** |
+
+The condition is deliberately **not** emitted as its own claim: the source states
+a broader condition ("…or a field has the wrong type"), so the model's narrowed
+version scores 0.000 alone and would reintroduce the false negative from the
+other side. Cost of that choice: a fabricated *condition* now goes unchecked.
+
+### Result — measured in the same run, so no cross-run noise
+
+| | strict rule | **severity + premise + clause fixes** |
+|---|---|---|
+| flagged records | 6/10 answers (**0.600**) | 1/10 answers (**0.100**) |
+| hallucination_rate | 0.375 | **0.063** |
+| faithfulness | — | 0.818 (from 0.771) |
+| contradicted_claim_rate | — | **0.000** |
+| correct abstention / adversarial robustness | 1.000 / 1.000 | 1.000 / 1.000 |
+
+Five records that the strict rule flagged are now correctly clean, each
+hand-verified against the corpus.
+
+### The last flagged record is still a false positive
+
+`"How do you declare a path parameter in Breeze?"` scores `faithfulness 0.0`, and
+its answer is **verbatim correct** against `01_routing.md:9-10`. Two failure modes
+NLI can't handle, both now visible:
+
+1. **Code snippets** — ``For example: `@app.get("/items/{item_id}")`.`` is not a
+   natural-language proposition; an NLI model has nothing to reason over.
+2. **Anaphora broken by isolation** — "This value is passed to the handler as a
+   function argument with the same name" is verbatim from the source, but once
+   split out as a standalone claim, "This value" has no referent.
+
+Fixing (1) means skipping code-only claims; (2) needs coreference resolution or
+carrying the preceding sentence as context. Neither is attempted here.
+
+### Caveat: local runs are not reproducible run-to-run
+
+Unlike `mock`, the local pipeline varies slightly between identical runs — this
+run answered 10/16 where the previous answered 11/16, moving over-abstention
+0.083 → 0.167. Ollama at `temperature: 0` is not bit-deterministic, and at n=16
+one record is ±6 pp. **Compare configurations within a single run** (as the table
+above does, strict vs severity on identical answers) rather than across runs, and
+treat cross-run deltas smaller than ~2 records as noise.
+
 ### Best local configuration measured so far
 
 Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
 Versus the first local baseline (3B judge, LLM claims):
 
-| | first baseline | **best (severity + premise fix)** |
+| | first baseline | **best (severity + premise + clause fixes)** |
 |---|---|---|
-| hallucination_rate | 0.313 | **0.188** |
+| hallucination_rate | 0.313 | **0.063** |
 | over_abstention_rate | 0.333 | **0.083** |
 | answer_correctness | 0.201 | **0.323** |
 | correct_abstention / adv. robustness | 1.000 / 1.000 | **1.000 / 1.000** |
@@ -286,12 +343,11 @@ Revised twice now. Two hypotheses were tested and both failed: ~~a stronger
 judge~~ (no effect on the flag rate) and ~~a stricter answer prompt~~ (actively
 worse). ~~Pin claim extraction~~ is done. What remains:
 
-1. ~~Decide what the metric should count~~ — **decided and implemented**: an
-   aside is not a fabrication. `eval.hallucination.mode: severity`, both
-   definitions reported every run. Remaining work here is the entailment
-   false-negative problem: either a stronger NLI model, or deterministic
-   *clause-level* claim decomposition so conditional compound claims stop being
-   scored as a single un-entailed unit.
+1. ~~Decide what the metric should count~~ and ~~clause-level decomposition~~ —
+   both **done**. Remaining metric work is narrower: skip code-only claims (an
+   NLI model has nothing to reason over in a code snippet), and handle anaphora
+   broken by claim isolation ("This value…" loses its referent). Those are the
+   two failure modes behind the single remaining false positive.
 2. **Try a 7–8B instruct generator** (not judge — generator). Judge strength was
    ruled out; generation quality has not been tested, and it is the remaining
    pipeline-side variable. `qwen2.5:7b` is already pulled.

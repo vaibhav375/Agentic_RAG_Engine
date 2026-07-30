@@ -145,3 +145,60 @@ def test_premise_units_handles_degenerate_input():
 
     assert _premise_units("") == []
     assert _premise_units("Short.") == ["Short."]
+
+
+# ------------------------------------------------------ clause decomposition
+
+
+def test_leading_conditional_is_stripped_so_the_assertion_is_judgeable():
+    """Entailment models score compound conditionals far worse than the clause
+    alone — measured 0.000 vs 0.992 against a premise that supports it."""
+    from arag.providers.base import atomic_claims
+
+    claims = atomic_claims(
+        "If a JSON body is missing a required field, Breeze returns a 422 response."
+    )
+    assert claims == ["Breeze returns a 422 response."]
+
+
+def test_trailing_clause_becomes_its_own_claim():
+    from arag.providers.base import atomic_claims
+
+    claims = atomic_claims("A query parameter without a default is required, "
+                           "so omitting it returns a 422.")
+    assert len(claims) == 2
+    assert claims[0].startswith("A query parameter")
+    assert "422" in claims[1]
+
+
+def test_plain_sentences_are_untouched():
+    from arag.providers.base import atomic_claims
+
+    text = "Use app.url_for to build a URL for a named route."
+    assert atomic_claims(text) == [text]
+
+
+def test_short_main_clause_keeps_the_whole_sentence():
+    """Stripping is only worth it when a real clause survives — otherwise the
+    condition carries the meaning and dropping it would lose information."""
+    from arag.providers.base import atomic_claims
+
+    assert atomic_claims("When the cache is warm, lookups are fast.") == [
+        "When the cache is warm, lookups are fast."
+    ]
+
+
+def test_decomposition_is_deterministic_and_offline():
+    from arag.providers.base import atomic_claims
+
+    text = "If X happens, the system returns a 422 response, so the handler is skipped."
+    assert atomic_claims(text) == atomic_claims(text)
+
+
+def test_metric_claims_honours_the_config(mock_cfg):
+    from eval.metrics import _metric_claims
+
+    text = "If a body is missing a field, Breeze returns a 422 response."
+    assert _metric_claims(mock_cfg, text) == ["Breeze returns a 422 response."]
+    sentence_mode = mock_cfg.with_overrides({"eval.claim_decomposition": "sentence"})
+    assert _metric_claims(sentence_mode, text) == [text]

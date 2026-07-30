@@ -36,6 +36,53 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+# Subordinating conjunctions that open a framing clause ("If X, Y" -> assert Y).
+_LEADING_SUBORDINATOR = re.compile(
+    r"^\s*(?:if|when|whenever|while|because|since|although|though|unless|after|"
+    r"before|once|as long as|in case|given that|assuming)\b[^,]{0,120},\s*",
+    re.IGNORECASE,
+)
+# Trailing clauses that tack a second assertion onto a sentence.
+_TRAILING_CLAUSE = re.compile(
+    r",\s*(?:so|because|since|which means|meaning|so that|therefore|and so)\b\s*",
+    re.IGNORECASE,
+)
+_MIN_CLAIM_WORDS = 4
+
+
+def atomic_claims(text: str) -> list[str]:
+    """Split an answer into claims small enough for an NLI model to judge.
+
+    Sentence-level splitting is reproducible but leaves *compound conditional*
+    sentences intact, and that is exactly what entailment models handle worst.
+    Measured with `nli-deberta-v3-base` against a premise that supports the
+    statement:
+
+        "If a JSON body is missing a required field, Breeze returns a 422 ..."
+                                                        entailment 0.000
+        "Breeze returns a 422 ..."  (main clause alone)  entailment 0.992
+
+    So a leading subordinate clause is treated as framing and dropped, and the
+    main clause carries the assertion. The condition is deliberately *not* emitted
+    as its own claim: the source states a broader condition ("... or a field has
+    the wrong type"), so the narrowed condition scores 0.000 on its own and would
+    reintroduce the same false negative from the other side.
+
+    Deterministic and dependency-free, so the metric stays reproducible and
+    independent of any model.
+    """
+    claims: list[str] = []
+    for sentence in split_sentences(text):
+        stripped = _LEADING_SUBORDINATOR.sub("", sentence, count=1).strip()
+        # Only accept the strip if a real clause survives it.
+        head = stripped if len(stripped.split()) >= _MIN_CLAIM_WORDS else sentence
+        parts = [p.strip(" ,") for p in _TRAILING_CLAUSE.split(head)]
+        for part in parts:
+            if part and len(part.split()) >= _MIN_CLAIM_WORDS:
+                claims.append(part if part.endswith(".") else part + ".")
+    return claims or [c for c in split_sentences(text)]
+
+
 def lexical_overlap(a: str, b: str) -> float:
     """Jaccard-ish support score: fraction of content tokens in `a` present in `b`."""
     ta, tb = content_tokens(a), content_tokens(b)
