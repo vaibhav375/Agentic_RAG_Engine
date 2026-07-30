@@ -3,7 +3,8 @@
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
 `llama3.2:3b` via Ollama · **Set:** 16-question stratified subset (10 easy /
-2 multi-hop / 2 unanswerable / 2 adversarial) · **Pipeline:** as shipped
+2 multi-hop / 2 unanswerable / 2 adversarial) of the then-62-question gold set
+(since grown to 109 — numbers in this file predate that change unless stated) · **Pipeline:** as shipped
 (hybrid + rerank + self-correction + CRAG) · **Wall clock:** 31 min.
 
 Reproduce: `ARAG_MODE=local ARAG_EMBEDDINGS__PROVIDER=sentence_transformers
@@ -304,6 +305,38 @@ one record is ±6 pp. **Compare configurations within a single run** (as the tab
 above does, strict vs severity on identical answers) rather than across runs, and
 treat cross-run deltas smaller than ~2 records as noise.
 
+## Judge calibration against human labels — the measurement that settles it
+
+`make calibrate` had only ever graded the mock judge. Run against the real
+judges on the 16-example human-labelled set:
+
+| Judge | accuracy | Cohen's κ | precision | recall | errors |
+|---|---|---|---|---|---|
+| **NLI (`nli-deberta-v3-base`)** | **0.938** | **0.875** | 1.000 | 0.875 | 1 false negative |
+| LLM `llama3.2:3b` | 0.750 | 0.500 | 1.000 | **0.500** | 4 false negatives |
+| LLM `qwen2.5:7b` | 0.938 | 0.875 | 1.000 | 0.875 | 1 false negative |
+
+**This explains two days of downstream symptoms directly.** The 3B judge's errors
+are all *false negatives* — it rejects claims that humans mark supported ("the
+default color of a widget is blue", "validation happens before the handler
+runs"). A judge with recall 0.5 rejects half the supported claims, so the
+self-correction loop cannot satisfy itself and abstains on answers that were
+correct. That is exactly the over-abstention and inflated flag rate chased
+through the sections above, now measured at the source instead of inferred from
+downstream rates.
+
+It also **corrects an earlier conclusion here**. The 7B-judge experiment reported
+"judge capability changed nothing," but that was measured under the strict metric
+with whole-chunk premises — a metric broken badly enough to mask the difference.
+Judge capability differs enormously (κ 0.50 vs 0.875); the metric was hiding it.
+
+The practical recommendation is unchanged and now has a direct reason:
+**`agent.critic: nli`**. The NLI model matches the 7B judge exactly (κ 0.875)
+while being roughly 7× cheaper, so the LLM judge earns nothing on this pipeline.
+
+Note the mock judge fails in the *opposite* direction — 4 false positives, κ 0.50
+— which is why mock over-reports support and real 3B under-reports it.
+
 ## Threshold sweep on real models
 
 `make sweep NAME=abstention` run in local mode (`llama3.2:3b`, `critic: nli`,
@@ -394,10 +427,10 @@ worse). ~~Pin claim extraction~~ is done. What remains:
 2. **Try a 7–8B instruct generator** (not judge — generator). Judge strength was
    ruled out; generation quality has not been tested, and it is the remaining
    pipeline-side variable. `qwen2.5:7b` is already pulled.
-3. **Run `make calibrate` in local mode.** It has only ever graded the mock judge.
-   It would measure judge/human agreement directly instead of inferring it from
-   downstream rates — and given two failed inferences, direct measurement is
-   overdue.
+3. ~~Run `make calibrate` in local mode~~ — **done**, and it was the highest-value
+   run of the whole exercise: it explained the over-abstention at source (3B judge
+   recall 0.500) and corrected an earlier conclusion drawn from downstream rates.
+   Direct measurement beat two rounds of inference.
 4. ~~Re-sweep thresholds under local mode~~ — **done**, see the sweep section.
    `nli_entail_threshold` turned out inert on this NLI model;
    `support_threshold` shows a monotone trade-off whose winning point is within
