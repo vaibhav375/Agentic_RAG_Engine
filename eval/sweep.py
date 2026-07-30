@@ -30,11 +30,14 @@ from arag.common.config import load_config  # noqa: E402
 from eval.run_eval import run_eval  # noqa: E402
 
 # The pipeline is evaluated as it ships, so a sweep result is directly actionable.
+# `agent.critic` is deliberately NOT forced here: it is inherited from config so a
+# sweep measures the critic you actually run. Forcing "both" would drag the LLM
+# judge into every local sweep — the configuration measured as both slowest and
+# worst on this pipeline (docs/local-mode-eval.md).
 _FULL_PIPELINE = {
     "retrieval.use_hybrid": True,
     "retrieval.use_rerank": True,
     "agent.enabled": True,
-    "agent.critic": "both",
     "agent.crag.enabled": True,
 }
 
