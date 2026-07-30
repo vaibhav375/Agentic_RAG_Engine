@@ -369,11 +369,15 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
   abstention (2/2 unanswerable declined) and injection robustness (2/2), and
   retrieval genuinely improves with real embeddings (recall@1 0.833 → 0.958,
   MRR 0.913 → 1.000). Diagnosis: every flagged answer was hand-checked against
-  the corpus and is factually correct — a 3B *judge* mis-scores correct-but-
-  elaborated claims, so the critic is the bottleneck rather than the generator.
-  The fix path (split `llm.judge_model` from the generator, calibrate it, re-sweep
-  thresholds) is in that doc. This claim previously read "the direction and
-  mechanism hold in every mode"; measurement disproved half of it.
+  the corpus and is factually correct — the model answers correctly and then adds
+  an explanatory clause that isn't in the retrieved context, and one such clause
+  flags the whole record. Upgrading the grader does **not** fix this: a 7B judge
+  (`qwen2.5:7b`) left the per-answer flag rate unchanged (0.625 → 0.700) at 7× the
+  latency, so the bottleneck is generation style plus a strict claim-level metric,
+  not judge capability. `agent.critic: nli` is the measured best local config.
+  Both the original diagnosis and its refutation are recorded in that doc.
+  This bullet previously read "the direction and mechanism hold in every mode";
+  measurement disproved half of it.
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
   neural embeddings — see the note in `RESULTS.md`.
 - **Reranking measurably costs ranking quality in `mock` mode** (recall@1

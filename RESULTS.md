@@ -13,14 +13,14 @@
 ## Ablation table
 | Configuration | Hallu.↓ | Faith.↑ | Ans.F1↑ | Rec@k↑ | Rec@1↑ | Rec@3↑ | MRR↑ | CiteP↑ | Abst.OK↑ | AdvRobust↑ | OverAbst↓ | p95 ms |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.854 | 0.969 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.310 |
+| Dense-only baseline | 0.306 | 0.742 | 0.329 | 1.000 | 0.854 | 0.969 | 0.925 | 0.792 | 0.000 | 0.000 | 0.000 | 0.300 |
 | + Hybrid (BM25 + RRF) | 0.306 | 0.742 | 0.334 | 1.000 | 0.917 | 0.990 | 0.965 | 0.802 | 0.000 | 0.000 | 0.000 | 0.610 |
-| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.833 | 0.948 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.940 |
+| + Cross-encoder rerank | 0.306 | 0.742 | 0.331 | 1.000 | 0.833 | 0.948 | 0.913 | 0.771 | 0.000 | 0.000 | 0.000 | 0.850 |
 | + Contextual chunk enrichment | 0.306 | 0.742 | 0.331 | 1.000 | 0.833 | 0.948 | 0.912 | 0.771 | 0.000 | 0.000 | 0.000 | 0.830 |
-| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.833 | 0.958 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.360 |
-| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.833 | 0.958 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.100 |
-| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.854 | 0.958 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.270 |
-| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.854 | 0.958 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.430 |
+| + Self-correction (LLM+NLI critic) | 0.048 | 1.000 | 0.323 | 1.000 | 0.833 | 0.958 | 0.912 | 0.875 | 0.625 | 1.000 | 0.104 | 3.450 |
+| + CRAG answerability gate | 0.000 | 1.000 | 0.323 | 1.000 | 0.833 | 0.958 | 0.912 | 0.875 | 1.000 | 1.000 | 0.104 | 3.110 |
+| + Query router | 0.000 | 1.000 | 0.323 | 1.000 | 0.854 | 0.958 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.200 |
+| + Semantic cache | 0.000 | 1.000 | 0.323 | 1.000 | 0.854 | 0.958 | 0.923 | 0.875 | 1.000 | 1.000 | 0.104 | 1.520 |
 
 _Arrows show the desired direction. Each row adds one component to the row above._
 
@@ -67,7 +67,7 @@ The critic is validated against a 16-example human-labeled set of (context, clai
 - Faithfulness/hallucination use a claim-level critic (LLM-as-judge cross-checked by an NLI entailment model) to reduce single-judge bias.
 - In `mock` mode every backend is deterministic, so CI reproduces these exact numbers; switch `mode` to `local`/`api` in `config.yaml` for real models. Determinism is platform-independent: ranking rounds scores before sorting and breaks ties on chunk index, because numpy's `argpartition`/`argsort` are unstable and were reordering tied results differently on macOS vs. Linux (verified — the CI gate diffs a locally-generated baseline against a Linux runner and reports zero delta on every metric).
 - Mock embeddings are lexical (hashed bag-of-words), so dense and sparse retrieval carry similar signal and the hybrid/rerank precision lift is muted here. Confirmed on real models: `bge-small` embeddings raise recall@1 0.833 → 0.958 and MRR 0.913 → 1.000 (see docs/local-mode-eval.md).
-- **These hallucination numbers are mock-mode and do not reproduce on a small local model.** Measured with `llama3.2:3b` on a 16-question stratified subset: hallucination 0.313, over-abstention 0.333. CRAG abstention (2/2) and adversarial robustness (2/2) do hold. Every flagged answer was hand-checked against the corpus and is factually correct — a 3B *judge* mis-scores correct-but-elaborated claims, so the critic is the bottleneck, not the generator. Full diagnosis and fix path: docs/local-mode-eval.md.
+- **These hallucination numbers are mock-mode and do not reproduce on a small local model.** Measured with `llama3.2:3b` on a 16-question stratified subset: hallucination 0.313, over-abstention 0.333. CRAG abstention (2/2) and adversarial robustness (2/2) do hold. Every flagged answer was hand-checked against the corpus and is factually correct: the model answers correctly then adds an aside that isn't in the context, and one such claim flags the record. A stronger judge does not fix it — qwen2.5:7b left the per-answer flag rate unchanged (0.625 -> 0.700) at 7x the latency — so the cause is generation style meeting a strict claim-level metric. Measured configs and the refuted hypothesis: docs/local-mode-eval.md.
 - `recall@k` (k=10) saturates at 1.000 on a 47-chunk corpus, so it cannot show a retrieval change; **recall@1 / recall@3** are the columns to read for ranking work. They make the hybrid gain visible (recall@1 0.854 → 0.917) where recall@k showed nothing, and they are what makes HyDE / decomposition / chunking measurable at all.
 - **Reranking costs ranking quality here** (recall@1 0.917 → 0.833): the mock reranker is lexical, so it carries less signal than the dense+sparse fusion it overwrites. `retrieval.rerank_fusion: rrf` fuses the two rankings instead and fully recovers recall@1 — but it shifts which passages reach the generator, and the CRAG gate (whose thresholds are calibrated against that context set) then degrades to hallucination 0.032 / correct abstention 0.750; `make sweep NAME=crag` recovers only to 0.016 / 0.875. Ranking quality isn't worth the headline safety metric, so `replace` remains the default and the knob is documented. This trade-off is a mock artifact of a lexical reranker — re-measure it with a real cross-encoder.
 - HyDE and multi-hop decomposition are implemented and config-gated but not shown as ablation rows: they are no-ops at this corpus size, and their benefit shows on larger corpora / at low k with neural embeddings (now measurable via recall@1 and MRR).
