@@ -35,7 +35,7 @@ import numpy as np
 
 from arag.agent.critic import critique_answer
 from arag.common.schemas import Answer, GoldQA
-from arag.providers.base import content_tokens, split_sentences
+from arag.providers.base import atomic_claims, content_tokens, split_sentences
 
 
 # --------------------------------------------------------------------------- #
@@ -115,6 +115,19 @@ def answer_relevance(embedder, question: str, answer: str) -> float:
 # --------------------------------------------------------------------------- #
 # per-record
 # --------------------------------------------------------------------------- #
+def _metric_claims(cfg, answer: str) -> list[str]:
+    """Deterministic claim units for the NLI metric.
+
+    `clause` (default) strips framing conditionals and splits trailing clauses,
+    because compound conditional sentences are what entailment models handle
+    worst — measured: 0.000 entailment for the compound, 0.992 for the main
+    clause alone. `sentence` keeps whole sentences for comparison.
+    """
+    if cfg.get("eval.claim_decomposition", "clause") == "sentence":
+        return split_sentences(answer)
+    return atomic_claims(answer)
+
+
 def _is_fabrication(cfg, ans: Answer, faithfulness: float, contradicted_fraction: float) -> bool:
     """Does this answer count as a hallucination?
 
@@ -168,7 +181,7 @@ def evaluate_record(comp, gold: GoldQA, ans: Answer) -> dict:
             ans.contexts,
             cfg.with_overrides({"agent.critic": faith_method}),
             nli=comp.nli,
-            claims=split_sentences(ans.answer) if faith_method == "nli" else None,
+            claims=_metric_claims(cfg, ans.answer) if faith_method == "nli" else None,
         )
         faithfulness = crit.support_fraction
         contradicted_fraction = crit.contradicted_fraction
