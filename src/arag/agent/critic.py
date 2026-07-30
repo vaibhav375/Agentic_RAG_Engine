@@ -26,13 +26,24 @@ def critique_answer(
     contexts: list[RetrievedChunk],
     cfg,
     nli: NLIModel | None = None,
+    claims: list[str] | None = None,
 ) -> CritiqueResult:
+    """Judge claim-level support. `claims` overrides LLM claim extraction.
+
+    The eval harness passes a deterministic split when its faithfulness metric is
+    NLI-based: otherwise claim *segmentation* follows whichever model is judging,
+    so the same answer decomposes differently under a different judge and
+    `faithfulness`/`hallucination_rate` stop being comparable across runs. That
+    silently confounded the first local-vs-mock comparison
+    (see docs/local-mode-eval.md).
+    """
     mode = cfg.get("agent.critic", "llm")
     support_threshold = float(cfg.get("agent.support_threshold", 0.5))
     nli_thresh = float(cfg.get("agent.nli_entail_threshold", 0.5))
 
     context_text = "\n".join(rc.chunk.text for rc in contexts)
-    claims = llm.extract_claims(answer_text)
+    if claims is None:
+        claims = llm.extract_claims(answer_text)
     if not claims:
         return CritiqueResult(supported=False, support_fraction=0.0, missing_info=None)
 

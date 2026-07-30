@@ -29,7 +29,7 @@ import numpy as np
 
 from arag.agent.critic import critique_answer
 from arag.common.schemas import Answer, GoldQA
-from arag.providers.base import content_tokens
+from arag.providers.base import content_tokens, split_sentences
 
 
 # --------------------------------------------------------------------------- #
@@ -122,12 +122,16 @@ def evaluate_record(comp, gold: GoldQA, ans: Answer) -> dict:
     else:
         # Grade with the judge model, not the generator — an answer scored by the
         # model that wrote it is the self-preference bias this harness avoids.
+        # When the metric is NLI-based, take the LLM out of the path completely by
+        # splitting claims deterministically: otherwise segmentation follows the
+        # judge model and the metric isn't comparable across judges.
         crit = critique_answer(
             comp.judge or comp.llm,
             ans.answer,
             ans.contexts,
             cfg.with_overrides({"agent.critic": faith_method}),
             nli=comp.nli,
+            claims=split_sentences(ans.answer) if faith_method == "nli" else None,
         )
         faithfulness = crit.support_fraction
 

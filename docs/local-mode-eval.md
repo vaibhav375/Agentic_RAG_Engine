@@ -122,17 +122,84 @@ Two secondary findings:
   correctness, 2.6× faster than the baseline, and it keeps abstention (1.000) and
   adversarial robustness (1.000) intact. `agent.critic: nli` for local mode.
 
+## Second correction: the prompt fix failed too, and the flag rate is the metric
+
+The step-1 recommendation above was "constrain generation, not grading" — tighten
+the answer prompt against ungrounded elaboration. That was implemented, measured,
+and **reverted**. All runs below: 3B generator, NLI-only critic, 16-question
+subset.
+
+| Run | prompt | claim split | flag rate ↓ | faith ↑ | ansF1 ↑ | overAbst ↓ |
+|---|---|---|---|---|---|---|
+| A | original | LLM-extracted | 0.636 | 0.845 | 0.323 | 0.083 |
+| **C** | original | **deterministic** | **0.545** | 0.771 | 0.323 | 0.083 |
+| B | tightened | deterministic | 0.727 | 0.552 | 0.291 | 0.083 |
+
+The first attempt changed *both* the prompt and the metric's claim splitting in
+one run — a self-inflicted confound, and the reason run C exists. With that
+control:
+
+- **C vs A** (metric only, prompt held): flag rate **improves** 0.636 → 0.545.
+  Deterministic splitting is both more comparable *and* slightly kinder.
+- **B vs C** (prompt only, metric held): flag rate **degrades** 0.545 → 0.727,
+  faithfulness 0.771 → 0.552, correctness 0.323 → 0.291.
+
+**The tightened prompt is solely responsible for the degradation**, and the
+mechanism is visible in the outputs: some answers dropped their `[id]` citations
+entirely, and one cited `03_request_body` for a question about path-parameter
+declaration (`01_routing`). Piling five more prohibitions on a 3B model consumed
+its instruction-following budget and crowded out the *original* requirements.
+Over-constraining a small model degrades it rather than disciplining it. The
+prompt is reverted, with that finding recorded in `prompts.py` so nobody
+re-attempts it.
+
+### The flag rate looks like a property of the metric
+
+Across five configurations — 3B judge, 7B judge, NLI-only, two prompts, two claim
+splits — the per-answer flag rate stayed in **0.545–0.727**. Judge strength
+didn't move it; prompt strictness moved it the wrong way. A claim-level metric
+that flags an entire record for one unsupported unit, scoring "correct and
+grounded plus one aside" identically to a fabrication, appears to sit around
+0.5–0.7 for any small model.
+
+**This is now the open question, and it is a definition decision rather than a
+bug:** should a correct, grounded answer containing one unsupported aside count as
+a hallucination? If yes, these local numbers are simply what a 3B model scores,
+and the lever is a bigger model. If no, the metric needs a severity notion — for
+instance only flagging claims that *contradict* the context rather than merely
+going beyond it, or weighting by claim count instead of any-claim-fails. That
+changes the definition of the project's headline metric after it has been
+published, so it is left as an explicit decision, not made silently.
+
+### Best local configuration measured so far
+
+Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
+Versus the first local baseline (3B judge, LLM claims):
+
+| | first baseline | **run C** |
+|---|---|---|
+| hallucination_rate | 0.313 | 0.375 |
+| over_abstention_rate | 0.333 | **0.083** |
+| answer_correctness | 0.201 | **0.323** |
+| correct_abstention / adv. robustness | 1.000 / 1.000 | **1.000 / 1.000** |
+| p50 latency | 73 s | **28 s** |
+
+Four fewer correct answers thrown away, 60% higher answer correctness, 2.6×
+faster, with the safety gates intact. The nominal hallucination rate is slightly
+higher purely because it answers more questions — the per-answer flag rate went
+*down* (0.625 → 0.545).
+
 ### Measurement caveat introduced by this change
 
-Routing eval faithfulness through `comp.judge` means **claim extraction now
-follows `judge_model`**, so segmentation differs between runs with different
-judges — `hallucination_rate` and `faithfulness` are strictly comparable only
-within a fixed judge. The per-answer table above is the robust comparison: it
-counts records, and the entailment scoring itself is the fixed deberta-NLI model
-(`eval.faithfulness_method: nli`) in all three runs. Pinning claim extraction to
-a deterministic sentence splitter when the metric is NLI-based would remove the
-wrinkle; it would also shift the published mock numbers, so it is listed as a
-next step rather than done silently here.
+Routing eval faithfulness through `comp.judge` meant **claim extraction followed
+`judge_model`**, so segmentation differed between runs with different judges and
+`hallucination_rate`/`faithfulness` were comparable only within a fixed judge.
+
+**Fixed.** When `eval.faithfulness_method: nli`, the metric now splits claims with
+a deterministic sentence splitter and never calls an LLM — `critique_answer` takes
+an explicit `claims` argument. The metric is now independent of every model in the
+pipeline, so runs are comparable across judges and generators. Mock numbers were
+unaffected (the mock already split deterministically), so no baseline moved.
 
 ## Next steps, in order
 
@@ -140,28 +207,29 @@ Revised after the experiment above. ~~Split the judge from the generator~~ was
 step 1; it was implemented, measured, and did not work. The remaining steps
 target generation and measurement, where the evidence now points.
 
-1. **Constrain generation, not grading.** The flagged answers are correct plus an
-   unsupported explanatory clause. Tighten the answer prompt against
-   elaboration beyond the retrieved context, and/or lower `llm.max_tokens` for
-   local models. This is the only lever aimed at the actual cause, and it is
-   directly measurable by the per-answer flag rate (currently ~0.63).
-2. **Decide what the metric should count.** "Correct, grounded, plus one
-   unsupported aside" is currently scored identically to a fabrication. If that
-   is not the intent, claim-level support needs a severity notion — or the answer
-   prompt needs to forbid asides (step 1). Either way this is a definition
-   decision, not a bug.
-3. **Pin claim extraction for the metric** to a deterministic splitter when
-   `faithfulness_method: nli`, removing the LLM from the metric path entirely and
-   making runs comparable across judges. Note this shifts the published mock
-   numbers, so it needs a baseline regeneration.
-4. **Run `make calibrate` in local mode.** Still worth doing: it has only ever
-   graded the mock judge, and it would quantify the judge's agreement with humans
-   rather than inferring it from downstream rates.
-5. **Re-sweep thresholds under local mode** (`make sweep NAME=abstention`); the
-   defaults were fitted on mock behavior. Budget: ~12 min per NLI-critic run.
-6. **Use `agent.critic: nli` for local mode** — the measured best config (see the
-   correction section). Do *not* use a 7B judge here: strictly dominated at 7× the
-   latency.
+Revised twice now. Two hypotheses were tested and both failed: ~~a stronger
+judge~~ (no effect on the flag rate) and ~~a stricter answer prompt~~ (actively
+worse). ~~Pin claim extraction~~ is done. What remains:
+
+1. **Decide what the metric should count** — now the blocker, not a nice-to-have.
+   "Correct, grounded, plus one unsupported aside" scores identically to a
+   fabrication, and five configurations could not move the flag rate out of
+   0.545–0.727. Either accept that as a small model's honest score, or give
+   claim-level support a severity notion (flag only claims that *contradict*
+   context; or weight by claim count rather than any-claim-fails). This redefines
+   the headline metric, so it needs an explicit decision.
+2. **Try a 7–8B instruct generator** (not judge — generator). Judge strength was
+   ruled out; generation quality has not been tested, and it is the remaining
+   pipeline-side variable. `qwen2.5:7b` is already pulled.
+3. **Run `make calibrate` in local mode.** It has only ever graded the mock judge.
+   It would measure judge/human agreement directly instead of inferring it from
+   downstream rates — and given two failed inferences, direct measurement is
+   overdue.
+4. **Re-sweep thresholds under local mode** (`make sweep NAME=abstention`); the
+   defaults were fitted on mock behavior. Budget ~10 min per NLI-critic run.
+5. **Use `agent.critic: nli` for local mode** — the measured best config. Do *not*
+   use a 7B judge here (strictly dominated at 7× the latency), and do not tighten
+   the answer prompt (measured worse).
 
 ## Practical cost of local evaluation
 
