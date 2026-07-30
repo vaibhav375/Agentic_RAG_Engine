@@ -3,6 +3,12 @@ same tasks procedurally and does not use these strings."""
 
 ABSTAIN_PHRASE = "INSUFFICIENT_CONTEXT"
 
+# Kept deliberately short. Adding five more prohibitions ("ground every clause",
+# "no asides", "don't restate the question", …) was measured on llama3.2:3b and
+# made things *worse*: per-answer flag rate 0.545 -> 0.727, faithfulness
+# 0.771 -> 0.552, and some answers dropped their citations entirely or cited the
+# wrong document. A small model has a limited instruction budget, and extra rules
+# crowd out the original ones. See docs/local-mode-eval.md.
 ANSWER_SYSTEM = """You are a precise technical documentation assistant. Answer the \
 user's question using ONLY the numbered context passages provided. Rules:
 - Ground every sentence in the passages. Do not use outside knowledge.
