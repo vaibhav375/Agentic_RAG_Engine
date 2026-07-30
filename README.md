@@ -178,13 +178,66 @@ The UI drives these endpoints, added for the app: `POST /query` (+ per-request
 feature flags), `POST /query/stream` (SSE), `GET /config`, `/corpus`,
 `/chunk/{id}`, and `/eval/{ablation|selective|history|calibration}`.
 
-### 4. Real models
+### 4. Real models — open weights, no API key
+
+`local` mode runs the whole pipeline on open-weight models with **no account, no
+key, and no per-token cost**: `bge-small-en-v1.5` embeddings and
+`bge-reranker-base` (sentence-transformers), `nli-deberta-v3-base` for the NLI
+cross-check, and Ollama for generation.
 
 ```bash
-make install-api                 # or: make install-local
-cp .env.example .env             # add OPENAI_API_KEY / ANTHROPIC_API_KEY
-# edit config/config.yaml: mode: api, llm.provider: openai, embeddings.provider: openai
+make install-local
+brew install ollama && ollama serve       # or the Ollama.app
+ollama pull llama3.2:3b                   # ~2 GB
+# config/config.yaml: mode: local, embeddings.provider: sentence_transformers,
+#                     llm.provider: ollama, llm.ollama_model: llama3.2:3b
 make ingest && make eval
+```
+
+**Pick an instruct model, not a reasoning model.** Measured on this pipeline
+(M-series laptop, one query, full agentic path):
+
+| Model | Wall clock | Output |
+|---|---|---|
+| `llama3.2:3b` (instruct) | **48 s** | clean grounded answer + citations |
+| `qwen3:4b` (reasoning) | 229 s | narrates its reasoning into the answer text |
+
+Reasoning models emit chain-of-thought that lands in the answer, wrecking
+citation parsing and token-F1. `llm.think: false` asks Ollama to suppress it
+(needs Ollama ≥ 0.9; set `null` for older servers) — but small reasoning models
+often narrate anyway, so prefer an instruct model here. Qwen's own instruct
+builds (`qwen2.5:3b`, `qwen2.5:7b`) work well.
+
+Local generation is ~50× slower than mock, so use a **stratified subset** while
+iterating — `eval.subset: 16` keeps every difficulty slice represented:
+
+```bash
+ARAG_EVAL__SUBSET=16 make eval
+```
+
+**Open-weight models too big for a laptop.** Kimi K2 (~1T params MoE), Qwen3-235B
+and friends have open weights but need a host. `provider: openai` speaks the
+OpenAI protocol to *any* compatible endpoint, so they need no new backend — just
+a `base_url`, a model id, and whichever env var holds that host's key:
+
+```yaml
+llm:
+  provider: openai
+  base_url: https://api.moonshot.ai/v1     # Moonshot (Kimi)
+  api_key_env: MOONSHOT_API_KEY
+  model: kimi-k2-0711-preview
+```
+
+Same shape for OpenRouter, Together, Groq, or a self-hosted vLLM (which needs no
+key at all — `base_url: http://localhost:8000/v1`). Note the distinction: the
+*weights* are open, the *hosting* still costs money.
+
+For OpenAI/Anthropic proper:
+
+```bash
+make install-api
+cp .env.example .env             # add OPENAI_API_KEY / ANTHROPIC_API_KEY
+# config/config.yaml: mode: api, llm.provider: openai, embeddings.provider: openai
 ```
 
 Everything is config-driven — models, `k` values, thresholds, iteration cap,
