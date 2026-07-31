@@ -60,3 +60,50 @@ def test_no_citations_at_all():
     got = parse_citations("A bare answer with no citation.", IDS)
     assert got.cited_chunk_ids == []
     assert got.text == "A bare answer with no citation."
+
+
+# ------------------------------------------------- batched NLI equivalence
+
+
+def test_batched_and_looped_nli_agree(mock_cfg):
+    """Batching is an optimization: it must not change a single score.
+
+    Verified numerically against the real cross-encoder too (max abs diff
+    1.4e-5); this pins the wiring so a future refactor can't silently reorder
+    claims against premises.
+    """
+    from arag.agent.critic import _score_claims
+    from arag.common.schemas import Chunk, RetrievedChunk
+    from arag.providers.base import MockNLI, NLIModel
+
+    class _LoopOnly(NLIModel):
+        """Implements only the required method — no entail_batch."""
+
+        def __init__(self):
+            self._inner = MockNLI()
+
+        def entail(self, premise, hypothesis):
+            return self._inner.entail(premise, hypothesis)
+
+    ctx = [
+        RetrievedChunk(chunk=Chunk(chunk_id="c0", doc_id="d", text=(
+            "The default color is blue. Widgets ship with a warranty. "
+            "Batteries last a thousand hours."))),
+        RetrievedChunk(chunk=Chunk(chunk_id="c1", doc_id="d", text=(
+            "GZip compresses responses over 500 bytes."))),
+    ]
+    claims = ["The default color is blue.", "Batteries last a thousand hours.",
+              "Responses are compressed when large."]
+
+    batched = _score_claims(MockNLI(), ctx, claims)
+    looped = _score_claims(_LoopOnly(), ctx, claims)
+    assert batched == looped
+    assert len(batched) == len(claims)
+
+
+def test_score_claims_handles_empty_input(mock_cfg):
+    from arag.agent.critic import _score_claims
+    from arag.providers.base import MockNLI
+
+    assert _score_claims(MockNLI(), [], ["a claim here"]) == [(0.0, 0.0)]
+    assert _score_claims(MockNLI(), [], []) == []

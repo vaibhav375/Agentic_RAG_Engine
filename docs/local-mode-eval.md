@@ -360,6 +360,65 @@ instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
 
+## Validating a plan before executing it — 4 of 6 items refuted
+
+Six improvements were proposed. Each was probed cheaply *before* implementation,
+and only two survived. The probes cost minutes; the refuted items would have cost
+hours.
+
+| Proposed | Verdict | Evidence |
+|---|---|---|
+| Fix the citation prompt | ✅ | A/B on 3 questions: real ids parsed **2 → 6**, fake `[cN]` markers **5 → 0** |
+| Batch the NLI calls | ✅ | **2.9×** on the critic, scores identical to 1.4e-5 |
+| Skip code-only claims, fix anaphora | ❌ | NLI already handles both: code claim entails **0.970**, anaphoric claim **0.998**, and resolving the anaphora changes nothing |
+| Stronger NLI (`deberta-v3-large`) | ❌ | Fails the compound conditional **identically** (0.000). 3× the parameters, zero gain on the observed failure modes |
+| `crag.mode: llm` | ❌ | LLM grader **3/4** vs heuristic **4/4** — it wrongly declined an answerable question. Also dead config: `grade_retrieval` never reads the mode |
+| Larger generator | ⏸ | Already measured, mixed; retest after the above |
+
+Two earlier claims in this document are corrected by these probes:
+
+- **`crag.mode` is not implemented.** An earlier section reported heuristic and
+  llm modes scoring identically and attributed it to mock's lexical LLM. The real
+  reason is that the mode is never read. Given the probe shows an LLM grader is
+  *worse* here, it is left unimplemented and the dead config flagged instead.
+- **The `u10` CRAG failure is mock-specific.** With real embeddings the heuristic
+  scores that question 0.28 and correctly declines it. The claim that "IDF
+  coverage cannot distinguish words present from concept present" holds under
+  mock's lexical retrieval, not in general.
+
+## Tier 1 executed: the citation prompt was the root cause
+
+The prompt showed `[c3]` as its example, and small models copied that literal
+token instead of the real chunk id (`01_routing::2`). Those fake markers match no
+known id, so the parser correctly leaves them in the text — where they become
+claims the NLI model cannot entail. The fix is a *correction* to a misleading
+example, not another prohibition; the earlier experiment established that adding
+rules to a 3B model backfires.
+
+3B generator, 40-question stratified subset, `critic: nli`:
+
+| | before | **after Tier 1** |
+|---|---|---|
+| hallucination (severity) ↓ | 0.250 | **0.075** |
+| hallucination (strict) ↓ | 0.475 | **0.250** |
+| faithfulness ↑ | 0.708 | **0.867** |
+| citation_precision ↑ | 0.438 | **0.781** |
+| answers carrying citations ↑ | 13/31 | **26/29** |
+| answer_correctness ↑ | 0.290 | **0.343** |
+| correct_abstention ↑ | 0.750 | **1.000** |
+| per-answer flag rate ↓ | 0.323 | **0.103** |
+| adversarial robustness | 1.000 | 1.000 |
+
+Every quality metric improved, several substantially. Over-abstention rose
+slightly (0.063 → 0.094, one record).
+
+**On latency, be careful.** Wall clock rose (30 → 48 min) despite batching, but
+that is not attributable to these changes: mean iterations rose 1.12 → 1.38, and
+a `qwen2.5:7b` probe ran immediately before, so Ollama was swapping models.
+Separately, the batching win is real but small end to end — it saves ~3 s of a
+~57 s query (**~5%**), because LLM generation dominates entirely. An earlier
+framing of batching as what "makes bigger models affordable" was overstated.
+
 ## Judge calibration against human labels — the measurement that settles it
 
 `make calibrate` had only ever graded the mock judge. Run against the real

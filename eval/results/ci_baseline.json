@@ -25,7 +25,7 @@
   "adversarial_robustness_rate": 1.0,
   "injection_detection_rate": 0.8,
   "latency_p50_ms": 1.28,
-  "latency_p95_ms": 4.52,
+  "latency_p95_ms": 4.54,
   "cost_usd_total": 0.0,
   "cost_usd_mean": 0.0,
   "cache_hit_rate": 0.0,
