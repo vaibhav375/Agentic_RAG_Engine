@@ -337,6 +337,29 @@ the fix: this corpus contains `list[str]`, and eating that would corrupt correct
 answers. A stray leading `c` is tolerated because models imitate the prompt's
 `[c3]` example and emit `[c01_routing::2]`.
 
+### Measured impact (3B generator, same 40-question subset, parser the only change)
+
+| | pre-fix | **post-fix** |
+|---|---|---|
+| answers carrying a parsed citation | **0/31** | **13/31** |
+| citation_precision | 0.062 | **0.438** |
+| faithfulness ↑ | 0.685 | **0.708** |
+| hallucination_strict ↓ | 0.525 | **0.475** |
+| hallucination (severity) ↓ | 0.250 | 0.250 |
+| over-abstention / correct abstention | 0.063 / 0.750 | 0.063 / 0.750 |
+
+The headline effect is on `citation_precision`, which went from measuring nothing
+to measuring something. Faithfulness and the strict rate improve modestly — the
+markers were polluting claims, but they were not the main driver of the residual
+flags. The severity rate is unchanged, which is the honest result: **this fixed a
+broken metric, not the model's grounding.**
+
+A second finding falls out of it: **18 of 31 answers still carry no citation at
+all**, despite the prompt requiring one per sentence. Citation-format
+instruction-following is weak at 3B, and that is now visible rather than hidden
+behind a parser that discarded every citation anyway. Worth re-measuring on the
+7B model, which is likelier to follow the format.
+
 ## Judge calibration against human labels — the measurement that settles it
 
 `make calibrate` had only ever graded the mock judge. Run against the real
