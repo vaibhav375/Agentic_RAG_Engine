@@ -305,6 +305,38 @@ one record is ±6 pp. **Compare configurations within a single run** (as the tab
 above does, strict vs severity on identical answers) rather than across runs, and
 treat cross-run deltas smaller than ~2 records as noise.
 
+## A parser bug that broke citations on every real-model run
+
+Spot-checking the 7B generator's flagged answers found three in a row that were
+**correct** — near-verbatim restatements of the corpus, one scored as an outright
+contradiction. The raw text explained why:
+
+```
+'The string values `1`, `true`, `on`, and `yes` are parsed as True for a
+ boolean query parameter, according to [02_query_params::2].'
+```
+
+The citation marker is still *in* the answer. Chunk ids contain `::`, and the
+parser matched `\[([A-Za-z0-9_\-]+)\]` — which cannot match a colon. So on every
+real-model run:
+
+- **no citation was ever extracted** — 0/31 answered records for the 3B run and
+  0/29 for the 7B run had a single parsed citation, making `citation_precision`
+  meaningless (it scored above zero only because abstentions count as 1.0);
+- **the markers stayed in the answer text**, so `[02_query_params::2]` became part
+  of a claim handed to the NLI model, which is not a proposition and cannot be
+  entailed.
+
+`mock` mode never showed this because `MockLLM` constructs citations directly
+instead of parsing them — the bug lived entirely in the real-model path, which
+had never been exercised until this week.
+
+The fix anchors matching on the ids actually supplied as context, rather than
+guessing a character class. A permissive "anything in brackets" pattern is *not*
+the fix: this corpus contains `list[str]`, and eating that would corrupt correct
+answers. A stray leading `c` is tolerated because models imitate the prompt's
+`[c3]` example and emit `[c01_routing::2]`.
+
 ## Judge calibration against human labels — the measurement that settles it
 
 `make calibrate` had only ever graded the mock judge. Run against the real
@@ -336,6 +368,33 @@ while being roughly 7× cheaper, so the LLM judge earns nothing on this pipeline
 
 Note the mock judge fails in the *opposite* direction — 4 false positives, κ 0.50
 — which is why mock over-reports support and real 3B under-reports it.
+
+## 3B vs 7B generator
+
+The last untested pipeline variable — every earlier experiment swapped the
+*judge*. 40-question stratified subset of the expanded gold set, `critic: nli`:
+
+| | llama3.2:3b | qwen2.5:7b |
+|---|---|---|
+| correct_abstention ↑ | 0.750 | **1.000** |
+| answer_correctness ↑ | 0.299 | **0.366** |
+| hallucination ↓ | **0.250** | 0.375 |
+| faithfulness ↑ | **0.685** | 0.533 |
+| per-answer flag rate ↓ | **0.323** | 0.517 |
+| adversarial robustness | 1.000 | 1.000 |
+| p50 latency | **28 s** | 72 s |
+| wall clock | **25 min** | 4.6 h |
+
+The 7B model is clearly better at the things a user cares about: it never
+answered an out-of-scope question (abstention 0.750 → 1.000) and its answers are
+22% closer to gold. It scores *worse* on faithfulness and hallucination — and the
+spot-check above shows those flags are largely the citation-parser bug plus the
+elaboration penalty, not fabrication. A stronger model writes longer answers,
+which means more claims, which means more chances for an imperfect NLI check to
+reject one.
+
+**These numbers predate the citation fix and should be re-run.** They are kept
+because they are what motivated the spot-check that found the bug.
 
 ## Threshold sweep on real models
 
