@@ -161,6 +161,19 @@ curl -s localhost:8000/query -H 'content-type: application/json' \
      -d '{"query":"What is the default GZip minimum size?"}' | jq
 ```
 
+### 3a. Playground — zero dependencies
+
+`make serve` alone gives you a working UI at <http://localhost:8000>: ask a
+question and watch the pipeline run — retrieve → CRAG grade → generate →
+critique → accept or abstain — with the per-stage trace, citations, retrieved
+context, and CRAG / guardrail / route badges. No Node, no npm, no build step;
+it is one HTML file served by the API.
+
+Try the built-in examples: an answerable question, an out-of-scope one (watch it
+abstain), a prompt injection (watch the guardrail fire and the trace stop before
+generation), and a multi-hop question. The feature checkboxes re-run the same
+query with components on or off, which is a live ablation.
+
 ### 3b. Interactive web app (Next.js frontend)
 
 An interactive **Playground** UI lets you ask questions and watch the pipeline
