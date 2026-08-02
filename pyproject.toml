@@ -55,6 +55,11 @@ arag = "arag.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The playground is served from disk at runtime, so it must ship with the
+# package — otherwise `GET /` 500s on any non-editable install (e.g. Docker).
+[tool.setuptools.package-data]
+arag = ["serve/*.html"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

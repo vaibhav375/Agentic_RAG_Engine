@@ -9,10 +9,19 @@ ABSTAIN_PHRASE = "INSUFFICIENT_CONTEXT"
 # 0.771 -> 0.552, and some answers dropped their citations entirely or cited the
 # wrong document. A small model has a limited instruction budget, and extra rules
 # crowd out the original ones. See docs/local-mode-eval.md.
+#
+# The citation rule is the exception, and it is a *correction* rather than an
+# addition: the old wording gave "[c3]" as the example, and small models copied
+# that literal token instead of the real chunk id ("01_routing::2"). Those fake
+# markers survive parsing (correctly — they match no known id) and end up inside
+# the claims handed to the NLI metric, where they cannot be entailed by anything.
+# Measured A/B on llama3.2:3b over three questions: real ids parsed 2 -> 6, and
+# fake [cN] markers left in the text 5 -> 0.
 ANSWER_SYSTEM = """You are a precise technical documentation assistant. Answer the \
 user's question using ONLY the numbered context passages provided. Rules:
 - Ground every sentence in the passages. Do not use outside knowledge.
-- After each sentence, cite the passage id(s) you used like [c3] or [c1][c4].
+- After each sentence, cite the passage id(s) you used, copying each id exactly
+  as it appears in brackets at the start of that passage.
 - If the passages do not contain enough information to answer, reply with exactly:
   {abstain}
 Keep the answer concise (1-4 sentences)."""

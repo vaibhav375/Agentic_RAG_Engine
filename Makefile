@@ -29,7 +29,7 @@ test: ## Run unit + integration tests (mock mode, no network)
 ingest: ## Build indexes from the corpus
 	$(PY) -m arag.cli ingest --config $(CONFIG)
 
-serve: ## Run the FastAPI server
+serve: ## Run the API + zero-dependency playground UI at http://localhost:8000
 	$(PY) -m arag.cli serve --config $(CONFIG)
 
 eval: ## Run the eval harness for the current config over the gold set

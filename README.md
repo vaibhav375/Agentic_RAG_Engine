@@ -17,11 +17,18 @@ harness** that measures faithfulness, answer relevance, context precision/recall
 and an explicit **hallucination rate**, and proves a **measured reduction in
 hallucination** vs. a naive RAG baseline through an ablation study.
 
-> **Headline (reproducible, `mock` mode):** hallucination rate **30.6% → 0.0%**,
-> correct abstention on unanswerable questions **0% → 100%**, and adversarial /
-> prompt-injection robustness **0% → 100%** across the ablation, on a 62-question
-> technical-docs benchmark (easy · multi-hop · unanswerable · adversarial). Run
-> `make ablation` to regenerate [`RESULTS.md`](RESULTS.md).
+> **Headline (reproducible, `mock` mode):** hallucination rate **31.2% → 1.8%**
+> (95% CI [0.0%, 4.6%]), correct abstention on unanswerable questions
+> **0% → 91.7%**, and adversarial / prompt-injection robustness **0% → 100%**
+> across the ablation, on a **109-question** technical-docs benchmark
+> (easy · multi-hop · unanswerable · adversarial). Run `make ablation` to
+> regenerate [`RESULTS.md`](RESULTS.md).
+>
+> These numbers were **0.0% and 100%** on the original 62-question set. Growing
+> the set to 109 exposed two genuine residual failures — the perfect scores were
+> partly an artifact of a small benchmark that the thresholds had been tuned
+> against. The larger set is the honest one, and its confidence interval is
+> narrow enough to mean something.
 
 ## Why this is more than "a chatbot"
 
@@ -34,8 +41,9 @@ engineer is expected to know:
 
 - **CRAG answerability gate** (Corrective RAG) — grades whether retrieved context
   can actually answer the query (IDF-weighted relevance) and **declines when it
-  can't**. This is what drives hallucination to 0 and abstention to 100% on
-  out-of-scope questions.
+  can't**. This is the main driver of the hallucination drop and of correct
+  abstention on out-of-scope questions (91.7% — the one miss is analysed in
+  `RESULTS.md`).
 - **Self-correction loop with an NLI-cross-checked LLM judge** — the critic
   combines LLM-as-judge with a natural-language-inference entailment model,
   mitigating LLM-judge self-preference bias.
@@ -122,7 +130,7 @@ eval/
   calibrate_judge · registry (experiment tracking) · selective · dashboard
 data/
   corpus/*.md            authored, verifiable technical-docs corpus
-  eval/gold_qa.jsonl     62 Qs: easy / multi-hop / unanswerable / adversarial
+  eval/gold_qa.jsonl     109 Qs: easy / multi-hop / unanswerable / adversarial
   eval/judge_calibration.jsonl   human labels for judge calibration
 tests/  unit + integration (fixture corpus, mock mode)
 ```
@@ -152,6 +160,19 @@ curl -s localhost:8000/health
 curl -s localhost:8000/query -H 'content-type: application/json' \
      -d '{"query":"What is the default GZip minimum size?"}' | jq
 ```
+
+### 3a. Playground — zero dependencies
+
+`make serve` alone gives you a working UI at <http://localhost:8000>: ask a
+question and watch the pipeline run — retrieve → CRAG grade → generate →
+critique → accept or abstain — with the per-stage trace, citations, retrieved
+context, and CRAG / guardrail / route badges. No Node, no npm, no build step;
+it is one HTML file served by the API.
+
+Try the built-in examples: an answerable question, an out-of-scope one (watch it
+abstain), a prompt injection (watch the guardrail fire and the trace stop before
+generation), and a multi-hop question. The feature checkboxes re-run the same
+query with components on or off, which is a live ablation.
 
 ### 3b. Interactive web app (Next.js frontend)
 
@@ -349,9 +370,9 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
 
 - Built a self-correcting agentic RAG engine (Corrective-RAG answerability gate +
   NLI-cross-checked LLM-as-judge critic) that re-issues its own retrievals or
-  abstains, cutting hallucination from **30.6%** to **0.0%** and reaching **100%**
-  correct abstention and **100%** prompt-injection robustness on a 62-question
-  benchmark.
+  abstains, cutting hallucination from **31.2%** to **1.8%** (95% CI [0, 4.6%])
+  and reaching **91.7%** correct abstention and **100%** prompt-injection
+  robustness on a 109-question benchmark.
 - Implemented hybrid dense + sparse (BM25 + RRF) retrieval with cross-encoder
   reranking, HyDE, and multi-hop query decomposition, served behind FastAPI with
   a semantic cache and a full Dockerized stack.

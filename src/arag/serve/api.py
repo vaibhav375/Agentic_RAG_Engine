@@ -23,7 +23,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from arag.common.config import load_config
@@ -143,6 +143,18 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
     @app.on_event("startup")
     def _startup() -> None:
         base_components()
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def playground() -> str:
+        """Zero-dependency playground served by the API itself.
+
+        The Next.js app under frontend/ is the richer UI, but it needs Node and
+        an npm install. This single file needs neither: `make serve` and open
+        the root URL. It is the fastest way to watch the pipeline actually run —
+        retrieve, CRAG grade, generate, critique, abstain — with the per-stage
+        trace and citations.
+        """
+        return (Path(__file__).parent / "playground.html").read_text()
 
     @app.get("/health")
     def health() -> dict:
