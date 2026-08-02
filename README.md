@@ -17,8 +17,8 @@ harness** that measures faithfulness, answer relevance, context precision/recall
 and an explicit **hallucination rate**, and proves a **measured reduction in
 hallucination** vs. a naive RAG baseline through an ablation study.
 
-> **Headline (reproducible, `mock` mode):** hallucination rate **31.2% → 1.8%**
-> (95% CI [0.0%, 4.6%]), correct abstention on unanswerable questions
+> **Headline (reproducible, `mock` mode):** hallucination rate **31.2% → 0.9%**
+> (95% CI [0.0%, 2.8%]), correct abstention on unanswerable questions
 > **0% → 91.7%**, and adversarial / prompt-injection robustness **0% → 100%**
 > across the ablation, on a **109-question** technical-docs benchmark
 > (easy · multi-hop · unanswerable · adversarial). Run `make ablation` to
@@ -196,7 +196,7 @@ cp .env.local.example .env.local
 npm install && npm run dev      # UI on http://localhost:3000
 ```
 
-Or the whole stack in one command (Qdrant + Redis + API + UI):
+Or the whole stack in one command (Redis + API + UI):
 
 ```bash
 docker compose up               # UI on :3000, API on :8000
@@ -272,10 +272,10 @@ Everything is config-driven — models, `k` values, thresholds, iteration cap,
 chunk size — via `config/config.yaml`, overridable per-field with
 `ARAG_SECTION__KEY` env vars (e.g. `ARAG_RETRIEVAL__USE_HYBRID=true`).
 
-### 5. Full Docker stack (Qdrant + Redis + app)
+### 5. Full Docker stack (Redis + app)
 
 ```bash
-docker compose up          # brings up qdrant, redis, and the API
+docker compose up          # brings up redis and the API
 ```
 
 ## Evaluation methodology
@@ -377,9 +377,9 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
 
 - Built a self-correcting agentic RAG engine (Corrective-RAG answerability gate +
   NLI-cross-checked LLM-as-judge critic) that re-issues its own retrievals or
-  abstains, cutting hallucination from **31.2%** to **1.8%** (95% CI [0, 4.6%])
-  and reaching **91.7%** correct abstention and **100%** prompt-injection
-  robustness on a 109-question benchmark.
+  abstains, cutting hallucination from **31.2%** to **0.9%**
+  (95% CI [0.0%, 2.8%]) and reaching **91.7%** correct abstention
+  and **100%** prompt-injection robustness on a 109-question benchmark.
 - Implemented hybrid dense + sparse (BM25 + RRF) retrieval with cross-encoder
   reranking, HyDE, and multi-hop query decomposition, served behind FastAPI with
   a semantic cache and a full Dockerized stack.
