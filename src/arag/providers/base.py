@@ -190,6 +190,17 @@ class NLIModel(ABC):
     def entail(self, premise: str, hypothesis: str) -> NLIResult:
         ...
 
+    def entail_batch(self, pairs: list[tuple[str, str]]) -> list[NLIResult]:
+        """Score many (premise, hypothesis) pairs at once.
+
+        The critic scores every claim against every premise unit of every
+        retrieved chunk — roughly 94 forward passes per query on this corpus.
+        Run one at a time that is ~2.9x slower than a single batched call on a
+        cross-encoder, for bit-identical scores (max abs diff 1.4e-5). The
+        default here keeps mock and any simple backend working unchanged.
+        """
+        return [self.entail(p, h) for p, h in pairs]
+
 
 class MockNLI(NLIModel):
     """Lexical entailment proxy. Entailment prob = fraction of hypothesis content

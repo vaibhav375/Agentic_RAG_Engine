@@ -110,6 +110,51 @@ class MockLLM(LanguageModel):
 # --------------------------------------------------------------------------- #
 # Real
 # --------------------------------------------------------------------------- #
+def parse_citations(raw: str, known_ids: list[str]) -> GeneratedAnswer:
+    """Pull `[chunk_id]` citations out of a model answer and strip those markers.
+
+    Matching is anchored on the ids actually supplied as context rather than on a
+    character-class guess. Both halves of that mattered in practice:
+
+    * Chunk ids contain `::` (`01_routing::2`), which the previous
+      `[A-Za-z0-9_\\-]+` pattern could not match — so with real models no citation
+      was ever parsed, `citation_precision` scored 0.0 for every answered record,
+      and the raw `[01_routing::2]` markers stayed in the answer text where they
+      polluted the claims handed to the NLI metric. Mock mode never showed it
+      because `MockLLM` builds citations directly instead of parsing them.
+    * A permissive "anything in brackets" pattern is not the fix: this corpus
+      contains `list[str]`, and eating that would corrupt correct answers.
+
+    Models also imitate the prompt's `[c3]` example and sometimes emit
+    `[c01_routing::2]`, so a stray leading `c` is tolerated.
+    """
+    lookup = {cid.lower(): cid for cid in known_ids}
+    cited: list[str] = []
+    spans: list[tuple[int, int]] = []
+
+    for m in re.finditer(r"\[([^\[\]\n]{1,120})\]", raw):
+        token = m.group(1).strip()
+        resolved = lookup.get(token.lower())
+        if resolved is None and token[:1].lower() == "c":
+            resolved = lookup.get(token[1:].strip().lower())
+        if resolved is None:
+            continue  # not a citation (e.g. `list[str]`) — leave it in the text
+        cited.append(resolved)
+        spans.append(m.span())
+
+    out = []
+    last = 0
+    for start, end in spans:
+        out.append(raw[last:start])
+        last = end
+    out.append(raw[last:])
+    clean = "".join(out)
+    # Tidy the punctuation left behind by removing a trailing marker.
+    clean = re.sub(r"[ \t]{2,}", " ", clean)
+    clean = re.sub(r"\s+([.,;:])", r"\1", clean).strip()
+    return GeneratedAnswer(text=clean, cited_chunk_ids=list(dict.fromkeys(cited)))
+
+
 class PromptLLM(LanguageModel):
     def __init__(self, cfg):
         self.cfg = cfg
@@ -217,9 +262,7 @@ class PromptLLM(LanguageModel):
         raw = self._complete(system, user).strip()
         if prompts.ABSTAIN_PHRASE in raw:
             return GeneratedAnswer(text="", cited_chunk_ids=[], abstained=True)
-        cited = re.findall(r"\[([A-Za-z0-9_\-]+)\]", raw)
-        clean = re.sub(r"\[[A-Za-z0-9_\-]+\]", "", raw).strip()
-        return GeneratedAnswer(text=clean, cited_chunk_ids=list(dict.fromkeys(cited)))
+        return parse_citations(raw, [cid for cid, _ in contexts])
 
     def extract_claims(self, answer: str) -> list[str]:
         raw = self._complete(prompts.CLAIMS_SYSTEM, answer)
