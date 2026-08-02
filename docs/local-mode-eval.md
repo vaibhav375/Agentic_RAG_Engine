@@ -3,7 +3,8 @@
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
 `llama3.2:3b` via Ollama · **Set:** 16-question stratified subset (10 easy /
-2 multi-hop / 2 unanswerable / 2 adversarial) · **Pipeline:** as shipped
+2 multi-hop / 2 unanswerable / 2 adversarial) of the then-62-question gold set
+(since grown to 109 — numbers in this file predate that change unless stated) · **Pipeline:** as shipped
 (hybrid + rerank + self-correction + CRAG) · **Wall clock:** 31 min.
 
 Reproduce: `ARAG_MODE=local ARAG_EMBEDDINGS__PROVIDER=sentence_transformers
@@ -114,10 +115,12 @@ it doesn't.
 
 Two secondary findings:
 
-- **The 7B judge is strictly dominated.** Same flagged rate, worse
-  over-abstention than NLI-only (0.167 vs 0.083), worse answer correctness
-  (0.289 vs 0.323), and **7× the latency** (208 s vs 28 s p50; 2.2 h for a
-  16-question run). There is no argument for it in this configuration.
+- **The 7B judge is strictly dominated** — as a *judge*. Calibration later put
+  it at κ 0.875, exactly matching NLI, so it adds no accuracy for several times
+  the cost. Note this is about the judge role only: the 7B as a *generator* is
+  a different question, retested post-Tier-1 below, where it wins on answer
+  quality at 1.39× cost. The latency figures quoted here were also inflated by
+  model thrashing (see that section).
 - **NLI-only is the best local config**: lowest over-abstention, highest answer
   correctness, 2.6× faster than the baseline, and it keeps abstention (1.000) and
   adversarial robustness (1.000) intact. `agent.critic: nli` for local mode.
@@ -304,6 +307,229 @@ one record is ±6 pp. **Compare configurations within a single run** (as the tab
 above does, strict vs severity on identical answers) rather than across runs, and
 treat cross-run deltas smaller than ~2 records as noise.
 
+## A parser bug that broke citations on every real-model run
+
+Spot-checking the 7B generator's flagged answers found three in a row that were
+**correct** — near-verbatim restatements of the corpus, one scored as an outright
+contradiction. The raw text explained why:
+
+```
+'The string values `1`, `true`, `on`, and `yes` are parsed as True for a
+ boolean query parameter, according to [02_query_params::2].'
+```
+
+The citation marker is still *in* the answer. Chunk ids contain `::`, and the
+parser matched `\[([A-Za-z0-9_\-]+)\]` — which cannot match a colon. So on every
+real-model run:
+
+- **no citation was ever extracted** — 0/31 answered records for the 3B run and
+  0/29 for the 7B run had a single parsed citation, making `citation_precision`
+  meaningless (it scored above zero only because abstentions count as 1.0);
+- **the markers stayed in the answer text**, so `[02_query_params::2]` became part
+  of a claim handed to the NLI model, which is not a proposition and cannot be
+  entailed.
+
+`mock` mode never showed this because `MockLLM` constructs citations directly
+instead of parsing them — the bug lived entirely in the real-model path, which
+had never been exercised until this week.
+
+The fix anchors matching on the ids actually supplied as context, rather than
+guessing a character class. A permissive "anything in brackets" pattern is *not*
+the fix: this corpus contains `list[str]`, and eating that would corrupt correct
+answers. A stray leading `c` is tolerated because models imitate the prompt's
+`[c3]` example and emit `[c01_routing::2]`.
+
+### Measured impact (3B generator, same 40-question subset, parser the only change)
+
+| | pre-fix | **post-fix** |
+|---|---|---|
+| answers carrying a parsed citation | **0/31** | **13/31** |
+| citation_precision | 0.062 | **0.438** |
+| faithfulness ↑ | 0.685 | **0.708** |
+| hallucination_strict ↓ | 0.525 | **0.475** |
+| hallucination (severity) ↓ | 0.250 | 0.250 |
+| over-abstention / correct abstention | 0.063 / 0.750 | 0.063 / 0.750 |
+
+The headline effect is on `citation_precision`, which went from measuring nothing
+to measuring something. Faithfulness and the strict rate improve modestly — the
+markers were polluting claims, but they were not the main driver of the residual
+flags. The severity rate is unchanged, which is the honest result: **this fixed a
+broken metric, not the model's grounding.**
+
+A second finding falls out of it: **18 of 31 answers still carry no citation at
+all**, despite the prompt requiring one per sentence. Citation-format
+instruction-following is weak at 3B, and that is now visible rather than hidden
+behind a parser that discarded every citation anyway. Worth re-measuring on the
+7B model, which is likelier to follow the format.
+
+## Validating a plan before executing it — 4 of 6 items refuted
+
+Six improvements were proposed. Each was probed cheaply *before* implementation,
+and only two survived. The probes cost minutes; the refuted items would have cost
+hours.
+
+| Proposed | Verdict | Evidence |
+|---|---|---|
+| Fix the citation prompt | ✅ | A/B on 3 questions: real ids parsed **2 → 6**, fake `[cN]` markers **5 → 0** |
+| Batch the NLI calls | ✅ | **2.9×** on the critic, scores identical to 1.4e-5 |
+| Skip code-only claims, fix anaphora | ❌ | NLI already handles both: code claim entails **0.970**, anaphoric claim **0.998**, and resolving the anaphora changes nothing |
+| Stronger NLI (`deberta-v3-large`) | ❌ | Fails the compound conditional **identically** (0.000). 3× the parameters, zero gain on the observed failure modes |
+| `crag.mode: llm` | ❌ | LLM grader **3/4** vs heuristic **4/4** — it wrongly declined an answerable question. Also dead config: `grade_retrieval` never reads the mode |
+| Larger generator | ⏸ | Already measured, mixed; retest after the above |
+
+Two earlier claims in this document are corrected by these probes:
+
+- **`crag.mode` is not implemented.** An earlier section reported heuristic and
+  llm modes scoring identically and attributed it to mock's lexical LLM. The real
+  reason is that the mode is never read. Given the probe shows an LLM grader is
+  *worse* here, it is left unimplemented and the dead config flagged instead.
+- **The `u10` CRAG failure is mock-specific.** With real embeddings the heuristic
+  scores that question 0.28 and correctly declines it. The claim that "IDF
+  coverage cannot distinguish words present from concept present" holds under
+  mock's lexical retrieval, not in general.
+
+## Tier 1 executed: the citation prompt was the root cause
+
+The prompt showed `[c3]` as its example, and small models copied that literal
+token instead of the real chunk id (`01_routing::2`). Those fake markers match no
+known id, so the parser correctly leaves them in the text — where they become
+claims the NLI model cannot entail. The fix is a *correction* to a misleading
+example, not another prohibition; the earlier experiment established that adding
+rules to a 3B model backfires.
+
+3B generator, 40-question stratified subset, `critic: nli`:
+
+| | before | **after Tier 1** |
+|---|---|---|
+| hallucination (severity) ↓ | 0.250 | **0.075** |
+| hallucination (strict) ↓ | 0.475 | **0.250** |
+| faithfulness ↑ | 0.708 | **0.867** |
+| citation_precision ↑ | 0.438 | **0.781** |
+| answers carrying citations ↑ | 13/31 | **26/29** |
+| answer_correctness ↑ | 0.290 | **0.343** |
+| correct_abstention ↑ | 0.750 | **1.000** |
+| per-answer flag rate ↓ | 0.323 | **0.103** |
+| adversarial robustness | 1.000 | 1.000 |
+
+Every quality metric improved, several substantially. Over-abstention rose
+slightly (0.063 → 0.094, one record).
+
+**On latency, be careful.** Wall clock rose (30 → 48 min) despite batching, but
+that is not attributable to these changes: mean iterations rose 1.12 → 1.38, and
+a `qwen2.5:7b` probe ran immediately before, so Ollama was swapping models.
+Separately, the batching win is real but small end to end — it saves ~3 s of a
+~57 s query (**~5%**), because LLM generation dominates entirely. An earlier
+framing of batching as what "makes bigger models affordable" was overstated.
+
+## 3B vs 7B generator, retested post-Tier-1 — and the cost claim was wrong
+
+The earlier 3B-vs-7B comparison is **void**: it ran with the citation-parser bug
+and the misleading `[c3]` prompt example, both of which penalise a model that
+writes more. Retested with one variable changed, the model pre-warmed, the same
+40-question stratified subset and `critic: nli`:
+
+| | llama3.2:3b | qwen2.5:7b |
+|---|---|---|
+| hallucination (severity) ↓ | 0.075 | 0.075 — identical (3/40) |
+| hallucination (strict) ↓ | 0.250 | **0.200** |
+| faithfulness ↑ | 0.867 | 0.875 (within noise) |
+| citation_precision ↑ | 0.781 | **0.938** |
+| answers carrying citations ↑ | 26/29 | **28/29** |
+| answer_correctness ↑ | 0.343 | **0.403** (+17% relative) |
+| correct_abstention ↑ | 1.000 | 1.000 — identical |
+| over_abstention ↓ | 0.094 | 0.094 — identical |
+| adversarial robustness ↑ | 1.000 | 1.000 — identical |
+| per-answer flag rate ↓ | 0.103 | 0.103 — identical (3/29) |
+| p50 latency | **57 s** | 69 s |
+| total query time | **42 min** | 58 min |
+
+**The safety metrics are now identical and saturated** — both models abstain
+correctly on every unanswerable question and resist every injection. The earlier
+case for the 7B rested on abstention 0.750 → 1.000; Tier 1 gave the 3B that for
+free, so that argument is gone. What remains is answer quality: **+17% answer
+correctness and +16 points of citation precision**, which are shifts across many
+records rather than a one-record flip.
+
+### The "11× cost" claim was an artifact of the harness
+
+The pre-Tier-1 run reported 4.6 h of wall clock for these 40 questions and this
+document called the 7B "strictly dominated" partly on that basis. That was wrong:
+measured query time in the same run was only **55.6 min**, so ~3.7 h was spent
+*outside* the timed path — consistent with Ollama thrashing between the 3B and 7B
+weights, since that script ran both models back to back in one process.
+
+Warmed and run on its own, the 7B costs **1.39×** the 3B's query time, not 11×.
+That materially changes the recommendation: a 7B instruct model is a reasonable
+default for local use where answer quality matters, with the 3B kept for fast
+iteration. Always warm the model and avoid interleaving two models in one
+process when timing.
+
+**Caveat on what this subset can and cannot show:** at n=40 the unanswerable and
+adversarial slices are 4 records each, and both models score perfectly on both.
+This subset cannot distinguish them on safety — that needs the full 109-question
+set or harder adversarial cases.
+
+## Judge calibration against human labels — the measurement that settles it
+
+`make calibrate` had only ever graded the mock judge. Run against the real
+judges on the 16-example human-labelled set:
+
+| Judge | accuracy | Cohen's κ | precision | recall | errors |
+|---|---|---|---|---|---|
+| **NLI (`nli-deberta-v3-base`)** | **0.938** | **0.875** | 1.000 | 0.875 | 1 false negative |
+| LLM `llama3.2:3b` | 0.750 | 0.500 | 1.000 | **0.500** | 4 false negatives |
+| LLM `qwen2.5:7b` | 0.938 | 0.875 | 1.000 | 0.875 | 1 false negative |
+
+**This explains two days of downstream symptoms directly.** The 3B judge's errors
+are all *false negatives* — it rejects claims that humans mark supported ("the
+default color of a widget is blue", "validation happens before the handler
+runs"). A judge with recall 0.5 rejects half the supported claims, so the
+self-correction loop cannot satisfy itself and abstains on answers that were
+correct. That is exactly the over-abstention and inflated flag rate chased
+through the sections above, now measured at the source instead of inferred from
+downstream rates.
+
+It also **corrects an earlier conclusion here**. The 7B-judge experiment reported
+"judge capability changed nothing," but that was measured under the strict metric
+with whole-chunk premises — a metric broken badly enough to mask the difference.
+Judge capability differs enormously (κ 0.50 vs 0.875); the metric was hiding it.
+
+The practical recommendation is unchanged and now has a direct reason:
+**`agent.critic: nli`**. The NLI model matches the 7B judge exactly (κ 0.875)
+while being roughly 7× cheaper, so the LLM judge earns nothing on this pipeline.
+
+Note the mock judge fails in the *opposite* direction — 4 false positives, κ 0.50
+— which is why mock over-reports support and real 3B under-reports it.
+
+## 3B vs 7B generator
+
+The last untested pipeline variable — every earlier experiment swapped the
+*judge*. 40-question stratified subset of the expanded gold set, `critic: nli`:
+
+| | llama3.2:3b | qwen2.5:7b |
+|---|---|---|
+| correct_abstention ↑ | 0.750 | **1.000** |
+| answer_correctness ↑ | 0.299 | **0.366** |
+| hallucination ↓ | **0.250** | 0.375 |
+| faithfulness ↑ | **0.685** | 0.533 |
+| per-answer flag rate ↓ | **0.323** | 0.517 |
+| adversarial robustness | 1.000 | 1.000 |
+| p50 latency | **28 s** | 72 s |
+| wall clock | **25 min** | 4.6 h |
+
+The 7B model is clearly better at the things a user cares about: it never
+answered an out-of-scope question (abstention 0.750 → 1.000) and its answers are
+22% closer to gold. It scores *worse* on faithfulness and hallucination — and the
+spot-check above shows those flags are largely the citation-parser bug plus the
+elaboration penalty, not fabrication. A stronger model writes longer answers,
+which means more claims, which means more chances for an imperfect NLI check to
+reject one.
+
+**Superseded — these numbers predate the citation fix and the prompt fix, and
+the re-run reverses their conclusion.** See "3B vs 7B generator, retested
+post-Tier-1" below. They are kept only because they motivated the spot-check that
+found the parser bug.
+
 ## Threshold sweep on real models
 
 `make sweep NAME=abstention` run in local mode (`llama3.2:3b`, `critic: nli`,
@@ -339,20 +565,30 @@ enough to move a shipped default. A full 62-question confirmation of
 
 ### Best local configuration measured so far
 
-Run C: original prompt, `agent.critic: nli`, deterministic metric claims.
-Versus the first local baseline (3B judge, LLM claims):
+`agent.critic: nli`, original prompt, severity metric with sentence-window
+premises and clause-level claims. Every value below is read from the **same
+artifact** (`eval/results/local_nli_severity.json`, the 23:51 run) against the
+first local baseline (`local_llama32.json`) — an earlier version of this table
+mixed rows from two different runs and overstated the result.
 
-| | first baseline | **best (severity + premise + clause fixes)** |
+| | first baseline | **final config** |
 |---|---|---|
 | hallucination_rate | 0.313 | **0.063** |
-| over_abstention_rate | 0.333 | **0.083** |
-| answer_correctness | 0.201 | **0.323** |
+| hallucination_rate_strict | 0.313 | 0.375 |
+| over_abstention_rate | 0.333 | **0.167** |
+| answer_correctness | 0.201 | **0.295** |
+| faithfulness | 0.886 | 0.818 |
 | correct_abstention / adv. robustness | 1.000 / 1.000 | **1.000 / 1.000** |
-| p50 latency | 73 s | **28 s** |
+| recall@1 / MRR | 0.958 / 1.000 | 0.875 / 0.958 |
+| p50 latency | 73 s | **34 s** |
 
-Four fewer correct answers thrown away, 60% higher answer correctness, 2.6×
-faster, hallucination down 40% relative, with the safety gates intact — and it
-answers 11/16 questions instead of 8/16 while doing it.
+Honest reading: hallucination down 80% relative, over-abstention halved, answer
+correctness up 47%, latency down 2.2×, safety gates intact. Faithfulness and
+recall@1 are *lower* — faithfulness because it now averages over more answered
+questions, recall@1 because it is one record at n=12 and local runs are not
+reproducible (see the caveat above). The intermediate run reached
+over-abstention 0.083 and answer_correctness 0.323; that difference is one
+record and should not be read as a regression.
 
 ### Measurement caveat introduced by this change
 
@@ -384,10 +620,10 @@ worse). ~~Pin claim extraction~~ is done. What remains:
 2. **Try a 7–8B instruct generator** (not judge — generator). Judge strength was
    ruled out; generation quality has not been tested, and it is the remaining
    pipeline-side variable. `qwen2.5:7b` is already pulled.
-3. **Run `make calibrate` in local mode.** It has only ever graded the mock judge.
-   It would measure judge/human agreement directly instead of inferring it from
-   downstream rates — and given two failed inferences, direct measurement is
-   overdue.
+3. ~~Run `make calibrate` in local mode~~ — **done**, and it was the highest-value
+   run of the whole exercise: it explained the over-abstention at source (3B judge
+   recall 0.500) and corrected an earlier conclusion drawn from downstream rates.
+   Direct measurement beat two rounds of inference.
 4. ~~Re-sweep thresholds under local mode~~ — **done**, see the sweep section.
    `nli_entail_threshold` turned out inert on this NLI model;
    `support_threshold` shows a monotone trade-off whose winning point is within
