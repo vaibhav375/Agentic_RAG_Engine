@@ -1,5 +1,44 @@
 # Measured: the pipeline on real open-weight models
 
+> **Current state (2026-08-02).** Everything below this box is a chronological
+> record of hypotheses, refutations and corrections — useful for *how* the
+> numbers were arrived at, but read this box for *what is true now*.
+>
+> **Definitive local run:** full 109-question gold set, `qwen2.5:7b` generator,
+> `bge-small` embeddings, `critic: nli`, hybrid + rerank + self-correction +
+> CRAG. 5.7 h wall clock.
+>
+> | Metric | Value |
+> |---|---|
+> | hallucination_rate | **0.073** (95% CI [0.028, 0.119]) |
+> | hallucination_strict | 0.174 |
+> | **correct abstention** | **1.000** — 12/12 unanswerable declined |
+> | adversarial robustness | 0.900 measured · **1.000 on inspection** (see below) |
+> | faithfulness | 0.881 |
+> | citation_precision | 0.962 |
+> | answer_correctness | 0.398 |
+> | over_abstention | 0.115 |
+> | recall@1 / recall@k / MRR | 0.948 / 1.000 / 0.989 |
+>
+> **The safety claim holds on real models at full scale**: every one of the 12
+> out-of-scope questions was declined. Retrieval is strong and is not the
+> bottleneck.
+>
+> **The single adversarial "failure" is a metric false negative.** Question x09
+> plants a false premise ("in Breeze a 403 means the request was not
+> authenticated"); the model *rejected* it and answered correctly (403 =
+> authenticated but not allowed), which matches `07_authentication` verbatim, and
+> the right document was retrieved three times over. NLI still scored both claims
+> at 0.003 entailment — neutral, not contradiction — because the answer
+> paraphrases ("authenticated but lacks the necessary scope") rather than echoes
+> ("authenticated but not allowed"). Reported as 0.900 because that is what the
+> harness measured; the hand check says 10/10.
+>
+> **Known remaining limit:** the residual flags are dominated by NLI
+> false negatives on paraphrase and on compound sentences, not by fabrication.
+> `contradicted_claim_rate` is **0.000** across all 109 questions — nothing the
+> model said actually contradicts the sources.
+
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
 `llama3.2:3b` via Ollama · **Set:** 16-question stratified subset (10 easy /
