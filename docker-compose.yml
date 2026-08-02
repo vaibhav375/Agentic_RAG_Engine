@@ -1,4 +1,8 @@
 services:
+  # NOTE: nothing connects to this yet. The engine uses an exact numpy cosine
+  # index (see src/arag/ingest/index.py) — there is no Qdrant backend. The
+  # service is kept so the container is one step away if the corpus outgrows
+  # exact search, but today it is NOT WIRED UP.
   qdrant:
     image: qdrant/qdrant:v1.9.2
     ports:

@@ -100,10 +100,12 @@ retrieval:
 
 # ----- Vector store --------------------------------------------------------
 vector_store:
-  backend: faiss                 # faiss | qdrant
-  qdrant_url: http://localhost:6333
-  collection: arag_docs
-  persist_dir: .arag_index       # where FAISS/BM25/meta are persisted
+  # Exact brute-force cosine over normalized vectors — no ANN index. A `backend`
+  # key used to sit here offering faiss|qdrant; neither was implemented and the
+  # key was never read, so it has been removed rather than left to mislead.
+  # Retrieval is ~4% of query latency at this corpus size, so an ANN index would
+  # buy nothing yet.
+  persist_dir: .arag_index       # where vectors/BM25/meta are persisted
 
 # ----- Agentic self-correction loop ----------------------------------------
 agent:
@@ -128,14 +130,22 @@ agent:
   claim_extraction: clause       # llm | clause
   nli_model: cross-encoder/nli-deberta-v3-base
   support_threshold: 0.5         # min fraction of claims that must be supported
-  nli_entail_threshold: 0.5      # NLI entailment prob to count a claim supported
+  # NLI entailment probability above which a claim counts as supported.
+  # MEASURED INERT on this NLI model: a 9-point sweep at 0.3 / 0.5 / 0.7 gave
+  # byte-identical results at every support level, because deberta's scores
+  # saturate near 0 and 1 and nothing lands in the band this threshold moves
+  # through. Kept because a different NLI model may well spread its scores.
+  nli_entail_threshold: 0.5
   abstain_message: "I don't have enough information in the provided sources to answer this confidently."
   # Corrective-RAG (CRAG) answerability gate: grade whether retrieved context can
   # actually answer the query before generating; decline when it can't. This is
   # the main lever for eliminating out-of-scope hallucination.
   crag:
     enabled: false               # Phase 4 (extra) turns this on
-    mode: heuristic              # heuristic (IDF coverage) | llm
+    # NOTE: a `mode: heuristic | llm` key used to live here. `grade_retrieval`
+    # never read it, so `llm` silently did nothing. It is removed rather than
+    # implemented because an LLM answerability grader measured *worse* than the
+    # heuristic on this corpus (3/4 vs 4/4, docs/local-mode-eval.md).
     correct_threshold: 0.55      # IDF-weighted query coverage >= -> answerable
     incorrect_threshold: 0.51    # < -> out of scope, abstain (tuned on the gold set)
   # Query router: send trivially-simple queries straight to generation and only
@@ -164,8 +174,8 @@ serve:
 eval:
   gold_path: data/eval/gold_qa.jsonl
   results_dir: eval/results
-  # Metric judge can differ from the answer LLM to reduce self-preference bias.
-  metric_judge_provider: null    # null -> use llm.provider
+  # (A `metric_judge_provider` key used to sit here and was never read. The
+  # real control is `faithfulness_method` below, plus `llm.judge_model`.)
   subset: null                   # e.g. 20 to run a fast CI subset; null = all
   retrieval_k: 10                # k for recall@k / precision@k on the ranked pool
   # recall@k at a generous k saturates at 1.0 on a small corpus, hiding every

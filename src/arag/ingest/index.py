@@ -1,10 +1,18 @@
 """Index building + the persistent Store that retrieval reads from.
 
 Builds a dense vector index and a sparse BM25 index over the same chunks and
-persists both to `vector_store.persist_dir`. The dense engine is a normalized
-brute-force cosine index by default (zero heavy deps, exact, fine at this
-corpus scale); FAISS is used automatically if installed, and Qdrant if the
-backend is set to `qdrant`.
+persists both to `vector_store.persist_dir`.
+
+The dense engine is a normalized brute-force cosine index: zero heavy
+dependencies, exact rather than approximate, and fast enough at this corpus
+scale (47 chunks — retrieval is ~4% of query latency, see
+docs/local-mode-eval.md).
+
+**There is no FAISS or Qdrant backend.** An earlier version of this docstring
+claimed both; neither was ever implemented, and `vector_store.backend` was never
+read. An ANN index only earns its complexity when exact search stops being
+affordable, which has not happened here. If that changes, wire it in `Store`
+and make the config key real at the same time.
 """
 
 from __future__ import annotations
