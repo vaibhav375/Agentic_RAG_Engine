@@ -110,6 +110,22 @@ agent:
   enabled: false                 # Phase 4 turns this on
   max_iterations: 2              # hard cap to protect latency/cost
   critic: llm                    # llm | nli | both  (both = LLM judge + NLI cross-check)
+  # How the critic splits an answer into claims.
+  #   llm    -> ask the model (an extra generation call per loop iteration)
+  #   clause -> the deterministic clause splitter the eval metric already uses
+  # `clause` is the default because it is better on BOTH axes, which is rare.
+  # Measured, qwen2.5:7b, 40-question subset, one variable changed:
+  #   hallucination   0.075 -> 0.000     faithfulness 0.875 -> 0.946
+  #   p50 latency     65.4s -> 42.6s     query time   56.8min -> 34.3min
+  # Small costs: citation precision 0.938 -> 0.922, answer correctness
+  # 0.403 -> 0.367. Mock also improves (0.018 -> 0.009).
+  # Why it is faster: the stage profile was generate 56% / critique 38%, and
+  # most of that critique cost was this extraction call, not the NLI scoring.
+  # Why it is *more accurate*: the deterministic split produces claims that
+  # track the answer's own sentences, so the online critic's judgments line up
+  # with how faithfulness is measured offline instead of drifting with whatever
+  # the model chose to paraphrase.
+  claim_extraction: clause       # llm | clause
   nli_model: cross-encoder/nli-deberta-v3-base
   support_threshold: 0.5         # min fraction of claims that must be supported
   nli_entail_threshold: 0.5      # NLI entailment prob to count a claim supported

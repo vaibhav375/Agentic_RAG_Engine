@@ -63,10 +63,24 @@ def test_supplied_claims_bypass_llm_extraction(mock_cfg):
     assert crit.support_fraction == 1.0
 
 
-def test_llm_extraction_still_used_when_claims_omitted(mock_cfg):
+def test_llm_extraction_used_when_explicitly_configured(mock_cfg):
+    """`claim_extraction: llm` asks the model. Set explicitly rather than relying
+    on the default, which is now `clause`."""
     llm = _CountingLLM()
-    critique_answer(llm, "The default widget color is blue.", _ctx("x"), mock_cfg, nli=MockNLI())
+    cfg = mock_cfg.with_overrides({"agent.claim_extraction": "llm"})
+    critique_answer(llm, "The default widget color is blue.", _ctx("x"), cfg, nli=MockNLI())
     assert llm.extract_calls == 1
+
+
+def test_clause_extraction_makes_no_llm_call(mock_cfg):
+    """The default. It removes an LLM generation call from every loop iteration —
+    measured 65.4s -> 42.6s p50 on qwen2.5:7b, while also improving faithfulness."""
+    llm = _CountingLLM()
+    cfg = mock_cfg.with_overrides({"agent.claim_extraction": "clause"})
+    crit = critique_answer(llm, "The default widget color is blue.", _ctx("x"),
+                           cfg, nli=MockNLI())
+    assert llm.extract_calls == 0
+    assert crit.claims  # it still produced claims, just without the model
 
 
 def test_claim_segmentation_drives_support_fraction(mock_cfg):

@@ -38,6 +38,12 @@
 > false negatives on paraphrase and on compound sentences, not by fabrication.
 > `contradicted_claim_rate` is **0.000** across all 109 questions — nothing the
 > model said actually contradicts the sources.
+>
+> **Since that run, `agent.claim_extraction: clause` became the default** and
+> improved things on both axes at once (40-question subset, one variable):
+> hallucination **0.075 → 0.000**, faithfulness **0.875 → 0.946**, p50 latency
+> **65.4 s → 42.6 s**, query time **56.8 → 34.3 min**. The full-set numbers above
+> predate it and should be re-run. See "Latency optimizations" below.
 
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
@@ -400,6 +406,45 @@ all**, despite the prompt requiring one per sentence. Citation-format
 instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
+
+## Latency optimizations: one that improved accuracy too
+
+Profiling a single query on `qwen2.5:7b` gave: **generate 56%, critique 38%**,
+retrieve 4%, rerank 2%. Most of that critique cost was not the NLI scoring — it
+was `llm.extract_claims()`, an entire generation call per loop iteration. The
+eval metric had already stopped doing that; the online critic had not.
+
+Three configs, one variable each, back-to-back in one process with the model
+pre-warmed, 40-question stratified subset:
+
+| config | hallu ↓ | faith ↑ | citP ↑ | ansF1 ↑ | flag rate ↓ | p50 | query time |
+|---|---|---|---|---|---|---|---|
+| baseline (llm claims, max_iter 2) | 0.075 | 0.875 | 0.938 | 0.403 | 0.103 | 65.4 s | 56.8 min |
+| **A: `claim_extraction: clause`** | **0.000** | **0.946** | 0.922 | 0.367 | **0.000** | **42.6 s** | **34.3 min** |
+| B: A + `max_iterations: 1` | 0.000 | 0.946 | 0.922 | 0.367 | 0.000 | 53.7 s | 38.6 min |
+
+**A is better on both axes**, which is rare enough to be worth explaining. Faster
+because it deletes an LLM call per iteration. *More accurate* because the
+deterministic split produces claims that track the answer's own sentences, so the
+online critic judges the same units the offline metric does, instead of drifting
+with whatever the model chose to paraphrase. It costs a little citation precision
+(0.938 → 0.922) and answer correctness (0.403 → 0.367). Mock improves too
+(0.018 → 0.009), so it is now the default.
+
+**B changes nothing.** Retries still fire under A (5 records), and capping the
+third iteration left every quality metric identical — so **the third iteration
+never helps**. B measured *slower* despite doing strictly less work, which is
+run-to-run variance, not an effect. `max_iterations` stays at 2; the useful
+finding is that a third pass is dead weight.
+
+A note on method: three separate attempts at this experiment were lost — a
+session died mid-run with nothing saved, another died after the baseline but the
+script would have redone it, and a third failed because the scratch directory had
+been wiped. The experiment now lives in
+`eval/experiments/latency_optimizations.py`, persists each config to
+`eval/results/opt_progress.json` as it completes, and skips finished configs on
+restart. Long experiments need durable scripts and incremental persistence from
+the start, not after the third failure.
 
 ## Validating a plan before executing it — 4 of 6 items refuted
 
