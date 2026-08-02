@@ -19,7 +19,12 @@ from __future__ import annotations
 import re
 
 from arag.common.schemas import ClaimJudgement, CritiqueResult, RetrievedChunk
-from arag.providers.base import LanguageModel, NLIModel, split_sentences
+from arag.providers.base import (
+    LanguageModel,
+    NLIModel,
+    atomic_claims,
+    split_sentences,
+)
 
 
 def critique_answer(
@@ -45,7 +50,7 @@ def critique_answer(
 
     context_text = "\n".join(rc.chunk.text for rc in contexts)
     if claims is None:
-        claims = llm.extract_claims(answer_text)
+        claims = _extract_claims(llm, answer_text, cfg)
     if not claims:
         return CritiqueResult(supported=False, support_fraction=0.0, missing_info=None)
 
@@ -111,6 +116,23 @@ def critique_answer(
             sum(j.contradicted for j in judgements) / len(judgements), 4
         ),
     )
+
+
+def _extract_claims(llm: LanguageModel, answer_text: str, cfg) -> list[str]:
+    """Split the answer into claims, either with the LLM or deterministically.
+
+    `agent.claim_extraction: clause` uses the same clause-level splitter the eval
+    metric uses, which removes an entire LLM generation call from every
+    self-correction iteration. Measured stage profile on `qwen2.5:7b`: generate
+    56%, critique 38% — and most of that critique time was this extraction call,
+    not the NLI scoring it feeds.
+
+    It also makes the online critic deterministic and model-independent, matching
+    how faithfulness is already measured offline.
+    """
+    if cfg.get("agent.claim_extraction", "llm") == "clause":
+        return atomic_claims(answer_text)
+    return llm.extract_claims(answer_text)
 
 
 def _max_entailment(nli: NLIModel, contexts: list[RetrievedChunk], claim: str) -> float:
