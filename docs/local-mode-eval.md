@@ -407,6 +407,45 @@ instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
 
+## Model size, isolated — and a correction to the earlier recommendation
+
+The earlier "3B vs 7B" comparison used **llama3.2:3b against qwen2.5:7b**, which
+varies model *family* and *size* together. Its headline finding — the 7B giving
+"+17% answer correctness" — was reported here as a size effect. It is not.
+
+Same family, size the only variable, 40-question stratified subset, `critic: nli`:
+
+| | qwen2.5:3b | qwen2.5:7b |
+|---|---|---|
+| hallucination ↓ | 0.025 (1 flagged) | **0.000** (0 flagged) |
+| faithfulness ↑ | 0.938 | 0.946 |
+| citation precision ↑ | 0.812 (24/29 cited) | **0.922** (27/28) |
+| **answer correctness** ↑ | **0.370** | 0.367 |
+| correct abstention ↑ | 1.000 | 1.000 |
+| adversarial robustness ↑ | 1.000 | 1.000 |
+| p50 latency | **13.9 s** | 42.4 s |
+| query time (40 Q) | **9.8 min** | 34.5 min |
+
+**Answer correctness is identical** (0.370 vs 0.367, the 3B marginally ahead). So
+the "+17%" attributed to size was a *family* effect — Qwen 2.5 beats Llama 3.2 at
+the same size — and the earlier recommendation to default to a 7B generator was
+drawn from a confounded comparison.
+
+**Recommended default: `qwen2.5:3b`.** It is 3× faster for the same quality. The
+only real gap is citation precision (0.812 vs 0.922, roughly 3 records), which is
+the metric most sensitive to instruction-following and the one place a larger
+model earns its cost. The hallucination difference is a single record at n=40 and
+is inside noise; abstention, adversarial robustness and answer correctness are
+identical.
+
+Practical consequence: a 40-question run drops 35 min → 10 min, and the full
+109-question set ~3.4 h → ~1 h. That moves a full eval from an overnight job to
+something runnable between other work.
+
+**What this subset cannot show:** the unanswerable and adversarial slices are 4
+records each and both models score perfectly on both, so it cannot separate them
+on safety. That needs the full set or harder traps.
+
 ## Latency optimizations: one that improved accuracy too
 
 Profiling a single query on `qwen2.5:7b` gave: **generate 56%, critique 38%**,
