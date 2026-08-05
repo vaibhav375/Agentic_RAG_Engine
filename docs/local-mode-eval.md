@@ -407,6 +407,40 @@ instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
 
+## Does the reranker earn its place? Yes — but not for its stated purpose
+
+It was suspected dead weight: mock showed it *hurting* ranking (recall@1
+0.917 → 0.833), and it had never been re-measured on real models. Three configs,
+one variable, `qwen2.5:3b`, 40-question subset:
+
+| config | recall@1 | recall@3 | MRR | **abstention** | hallu ↓ | citP ↑ | ansF1 ↑ | time |
+|---|---|---|---|---|---|---|---|---|
+| off | 0.906 | 0.984 | 0.969 | **0.750** ✗ | 0.025 | 0.797 | **0.409** | **9.7 min** |
+| replace (default) | 0.906 | 0.984 | 0.969 | **1.000** | 0.025 | 0.812 | 0.370 | 11.8 min |
+| rrf | 0.906 | 0.984 | 0.969 | **1.000** | **0.000** | **0.844** | 0.376 | 17.0 min |
+
+**The reranker contributes nothing to ranking.** recall@1, recall@3 and MRR are
+*identical to three decimals* across all three configs. With `bge-small` plus
+hybrid retrieval the right document is already at rank 1 on this corpus, so
+there is nothing for a reranker to fix. The earlier mock finding that it *hurt*
+ranking was a mock artifact — a lexical reranker reordering lexical embeddings.
+
+**But removing it costs the abstention guarantee**: 1.000 → 0.750, one
+out-of-scope question answered that should have been declined. The reranker
+changes *which five chunks reach the CRAG gate*, and the gate's IDF-coverage
+score is computed over exactly those chunks. So it earns its place through a
+second-order effect on the answerability gate, not through the ranking
+improvement it exists to provide. Worth knowing before anyone "optimizes" it away
+on the reasonable-looking grounds that retrieval metrics don't move.
+
+That also explains the `off` column looking attractive: it answers 32/40 instead
+of 29/40, so answer correctness rises simply because it attempts more — including
+questions it should refuse.
+
+`replace` stays the default. `rrf` buys ~1 record of hallucination and citation
+precision for 44% more time; both differences are inside noise at n=40, and the
+faster option is the better default until a larger set says otherwise.
+
 ## Model size, isolated — and a correction to the earlier recommendation
 
 The earlier "3B vs 7B" comparison used **llama3.2:3b against qwen2.5:7b**, which
