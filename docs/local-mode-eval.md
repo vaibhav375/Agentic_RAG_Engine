@@ -1,49 +1,47 @@
 # Measured: the pipeline on real open-weight models
 
-> **Current state (2026-08-02).** Everything below this box is a chronological
+> **Current state (2026-08-04).** Everything below this box is a chronological
 > record of hypotheses, refutations and corrections — useful for *how* the
 > numbers were arrived at, but read this box for *what is true now*.
 >
-> **Definitive local run:** full 109-question gold set, `qwen2.5:7b` generator,
-> `bge-small` embeddings, `critic: nli`, hybrid + rerank + self-correction +
-> CRAG. 5.7 h wall clock.
+> **Definitive local run:** full 109-question gold set, `qwen2.5:3b` generator,
+> `bge-small` embeddings, `critic: nli`, clause claim extraction, hybrid +
+> rerank(replace) + self-correction + CRAG. **31 minutes** wall clock.
 >
-> | Metric | Value |
-> |---|---|
-> | hallucination_rate | **0.073** (95% CI [0.028, 0.119]) |
-> | hallucination_strict | 0.174 |
-> | **correct abstention** | **1.000** — 12/12 unanswerable declined |
-> | adversarial robustness | 0.900 measured · **1.000 on inspection** (see below) |
-> | faithfulness | 0.881 |
-> | citation_precision | 0.962 |
-> | answer_correctness | 0.398 |
-> | over_abstention | 0.115 |
-> | recall@1 / recall@k / MRR | 0.948 / 1.000 / 0.989 |
+> | Metric | Value | previous full run |
+> |---|---|---|
+> | hallucination_rate | **0.018** (95% CI [0.000, 0.046]) | 0.073 |
+> | hallucination_strict | 0.138 | 0.174 |
+> | **correct abstention** | **1.000** — 12/12 declined | 1.000 |
+> | **adversarial robustness** | **1.000** — 10/10 | 0.900 |
+> | faithfulness | **0.935** | 0.881 |
+> | citation_precision | 0.799 | 0.962 |
+> | answer_correctness | 0.352 | 0.398 |
+> | over_abstention | 0.161 | 0.115 |
+> | recall@1 / MRR | 0.948 / 0.989 | 0.948 / 0.989 |
+> | p50 latency | **13.6 s** | 86 s |
+> | wall clock | **31 min** | 5.7 h |
 >
-> **The safety claim holds on real models at full scale**: every one of the 12
-> out-of-scope questions was declined. Retrieval is strong and is not the
-> bottleneck.
+> **Only two records flagged out of 109**, both `faithfulness 0.5` on easy
+> questions — one unsupported clause each, not fabrication. Per slice:
+> unanswerable 0.000, adversarial 0.000, multi-hop 0.000; every flag is in the
+> `easy` slice.
 >
-> **The single adversarial "failure" is a metric false negative.** Question x09
-> plants a false premise ("in Breeze a 403 means the request was not
-> authenticated"); the model *rejected* it and answered correctly (403 =
-> authenticated but not allowed), which matches `07_authentication` verbatim, and
-> the right document was retrieved three times over. NLI still scored both claims
-> at 0.003 entailment — neutral, not contradiction — because the answer
-> paraphrases ("authenticated but lacks the necessary scope") rather than echoes
-> ("authenticated but not allowed"). Reported as 0.900 because that is what the
-> harness measured; the hand check says 10/10.
+> **The adversarial metric false negative is gone.** x09 — the false-premise
+> question the harness previously scored as a failure while the model answered
+> correctly — now passes (`robustness_pass 1.0`). The clause decomposition and
+> citation fixes resolved it, so the measured 1.000 and the hand check finally
+> agree.
 >
-> **Known remaining limit:** the residual flags are dominated by NLI
-> false negatives on paraphrase and on compound sentences, not by fabrication.
-> `contradicted_claim_rate` is **0.000** across all 109 questions — nothing the
-> model said actually contradicts the sources.
+> **Read the comparison carefully:** the previous run used `qwen2.5:7b` *without*
+> the citation, prompt and claim-extraction fixes, so this column changes model
+> size and pipeline fixes together. The safety and speed gains are unambiguous;
+> the citation-precision drop (0.962 → 0.799) is attributable to the 3B model,
+> which the isolated size comparison measured at 0.812 vs 0.922.
 >
-> **Since that run, `agent.claim_extraction: clause` became the default** and
-> improved things on both axes at once (40-question subset, one variable):
-> hallucination **0.075 → 0.000**, faithfulness **0.875 → 0.946**, p50 latency
-> **65.4 s → 42.6 s**, query time **56.8 → 34.3 min**. The full-set numbers above
-> predate it and should be re-run. See "Latency optimizations" below.
+> **Known remaining limit:** residual flags are NLI false negatives on paraphrase,
+> not fabrication. `contradicted_claim_rate` is **0.000** across all 109
+> questions — nothing the model said contradicts the sources.
 
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on

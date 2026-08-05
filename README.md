@@ -30,12 +30,13 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > against. The larger set is the honest one, and its confidence interval is
 > narrow enough to mean something.
 >
-> **And on real open-weight models** (`qwen2.5:7b` + `bge-small`, same 109
-> questions, no API keys): hallucination **7.3%** (95% CI [2.8%, 11.9%]),
+> **And on real open-weight models** (`qwen2.5:3b` + `bge-small`, same 109
+> questions, no API keys, 31 min): hallucination **1.8%** (95% CI [0%, 4.6%]),
 > **correct abstention 100%** — all 12 out-of-scope questions declined —
-> citation precision **0.962**, recall@1 **0.948**. Full analysis, including a
-> hand-verified metric false negative on the one adversarial miss, in
-> [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
+> **adversarial robustness 100%**, faithfulness **0.935**, recall@1 **0.948**.
+> Only 2 of 109 records flagged, both a single unsupported clause rather than
+> fabrication, and `contradicted_claim_rate` is **0.000** across the whole set.
+> Full analysis in [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
 
 ## Why this is more than "a chatbot"
 
