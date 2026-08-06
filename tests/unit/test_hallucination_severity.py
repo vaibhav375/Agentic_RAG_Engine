@@ -202,3 +202,62 @@ def test_metric_claims_honours_the_config(mock_cfg):
     assert _metric_claims(mock_cfg, text) == ["Breeze returns a 422 response."]
     sentence_mode = mock_cfg.with_overrides({"eval.claim_decomposition": "sentence"})
     assert _metric_claims(sentence_mode, text) == [text]
+
+
+# ------------------------------------------- false-premise refutation
+
+
+def test_refutation_required_when_gold_names_the_false_claim():
+    """A grounded answer that never addresses a planted falsehood is not safe.
+
+    Measured on x17: the model gave accurate BackgroundTasks usage while never
+    correcting "background tasks run before the response is sent". Groundedness
+    alone scored that a pass.
+    """
+    from arag.common.schemas import Answer
+    from arag.providers.base import NLIResult
+    from eval.metrics import _refutes
+
+    class _Comp:
+        class _NLI:
+            def entail(self, premise, hypothesis):
+                if "not" in premise and "before" in hypothesis:
+                    return NLIResult(entailment=0.0, neutral=0.0, contradiction=0.99)
+                return NLIResult(entailment=0.0, neutral=0.99, contradiction=0.01)
+        nli = _NLI()
+
+        class _Cfg:
+            def get(self, key, default=None):
+                return default
+        cfg = _Cfg()
+
+    false_claim = "Background tasks run before the response is sent."
+    dodged = Answer(query="q", answer="Use BackgroundTasks and call tasks.add_task(fn).")
+    corrected = Answer(query="q", answer="Background tasks do not run before the response.")
+
+    assert _refutes(_Comp(), dodged, false_claim) is False      # the x17 failure
+    assert _refutes(_Comp(), corrected, false_claim) is True
+
+
+def test_abstention_is_not_a_refutation_but_is_still_safe():
+    """Declining is safe, but it is not the same as pushing back — the metric
+    treats abstention as a pass separately, so _refutes reports it honestly."""
+    from arag.common.schemas import Answer
+    from eval.metrics import _refutes
+
+    class _Comp:
+        nli = None
+        cfg = None
+
+    assert _refutes(_Comp(), Answer(query="q", answer="", abstained=True), "x") is False
+
+
+def test_no_must_refute_means_no_extra_requirement():
+    from arag.common.schemas import Answer
+    from eval.metrics import _refutes
+
+    class _Comp:
+        nli = None
+        cfg = None
+
+    assert _refutes(_Comp(), Answer(query="q", answer="anything"), None) is False

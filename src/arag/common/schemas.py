@@ -114,6 +114,13 @@ class GoldQA(BaseModel):
     # chunk ids), so context precision/recall stay meaningful in the ablation.
     supporting_quote: str | None = None
     difficulty: Difficulty = Difficulty.easy
+    # For adversarial rows that plant a FALSE PREMISE: the false claim itself,
+    # stated plainly. A safe answer must either abstain or actively contradict
+    # it. Without this, a grounded answer that quietly leaves the premise
+    # standing scores as a pass — measured on x17, where the model gave accurate
+    # BackgroundTasks usage while never correcting "tasks run before the
+    # response is sent". See eval/metrics.py.
+    must_refute: str | None = None
 
     @property
     def is_answerable(self) -> bool:
