@@ -225,12 +225,36 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
         comp = components_for(req.flags)
 
         async def gen():
+            # Real streaming: stages are emitted as the pipeline completes them.
+            # An earlier version ran the whole query first and replayed the
+            # recorded trace with sleeps, which looks live but shows nothing
+            # until the user has already waited for the entire answer.
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue = asyncio.Queue()
+            done = object()
+
+            def on_stage(timing) -> None:
+                # Called from the worker thread; hop back onto the loop.
+                loop.call_soon_threadsafe(queue.put_nowait, timing)
+
+            async def run():
+                try:
+                    return await asyncio.to_thread(answer_query, comp, req.query, on_stage)
+                finally:
+                    queue.put_nowait(done)   # always unblocks the reader
+
             yield _sse("status", {"message": "running pipeline"})
-            ans = await asyncio.to_thread(answer_query, comp, req.query)
-            # Reveal the pipeline stage-by-stage from the recorded trace.
-            for s in ans.trace:
-                yield _sse("stage", s.model_dump())
-                await asyncio.sleep(0.12)
+            task = asyncio.create_task(run())
+            while True:
+                item = await queue.get()
+                if item is done:
+                    break
+                yield _sse("stage", item.model_dump())
+            try:
+                ans = await task
+            except Exception as exc:  # surface failures instead of hanging the UI
+                yield _sse("error", {"message": str(exc)[:500]})
+                return
             yield _sse("answer", _answer_to_response(ans).model_dump())
             yield _sse("done", {})
 

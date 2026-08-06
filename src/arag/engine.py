@@ -139,10 +139,15 @@ def run_retrieval_and_generation(
     return generate_from(comp, answer_query, ranked, contexts, trace=trace)
 
 
-def answer_query(comp: Components, query: str) -> Answer:
-    """Full online path: guardrail -> cache -> route -> (self-correction | single pass) -> cache write."""
+def answer_query(comp: Components, query: str, on_stage=None) -> Answer:
+    """Full online path: guardrail -> cache -> route -> (self-correction | single pass) -> cache write.
+
+    `on_stage` is called with each `StageTiming` as it completes, so a caller can
+    stream progress while the query is still running rather than replaying the
+    trace after it finishes.
+    """
     cfg = comp.cfg
-    trace = Trace()
+    trace = Trace(on_stage=on_stage)
 
     # 0. Input guardrail (defense-in-depth; flags injection/jailbreak attempts).
     from arag.agent.guardrails import scan_input
