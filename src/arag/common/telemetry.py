@@ -7,6 +7,7 @@ and money went, and the eval harness can report p50/p95 latency and cost/query.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 
 from arag.common.schemas import StageTiming
@@ -30,10 +31,15 @@ def estimate_cost(model: str, in_tokens: int, out_tokens: int = 0) -> float:
 
 
 class Trace:
-    def __init__(self) -> None:
+    def __init__(self, on_stage: Callable[[StageTiming], None] | None = None) -> None:
         self.stages: list[StageTiming] = []
         self.cost_usd: float = 0.0
         self.tokens: dict[str, int] = {"in": 0, "out": 0}
+        # Fired the moment a stage closes, so a caller can surface progress while
+        # the query is still running. Without it the only way to "stream" is to
+        # finish the whole pipeline and replay the recorded trace afterwards,
+        # which shows nothing until the user has already waited for everything.
+        self._on_stage = on_stage
 
     @contextmanager
     def stage(self, name: str, **meta):
@@ -42,7 +48,14 @@ class Trace:
             yield
         finally:
             ms = (time.perf_counter() - start) * 1000.0
-            self.stages.append(StageTiming(stage=name, ms=round(ms, 2), meta=meta))
+            timing = StageTiming(stage=name, ms=round(ms, 2), meta=meta)
+            self.stages.append(timing)
+            if self._on_stage is not None:
+                # A broken listener must never take down the query it is watching.
+                try:
+                    self._on_stage(timing)
+                except Exception:
+                    pass
 
     def add_usage(self, model: str, in_tokens: int, out_tokens: int = 0) -> None:
         self.tokens["in"] += in_tokens

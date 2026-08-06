@@ -178,9 +178,11 @@ curl -s localhost:8000/query -H 'content-type: application/json' \
 
 `make serve` alone gives you a working UI at <http://localhost:8000>: ask a
 question and watch the pipeline run — retrieve → CRAG grade → generate →
-critique → accept or abstain — with the per-stage trace, citations, retrieved
-context, and CRAG / guardrail / route badges. No Node, no npm, no build step;
-it is one HTML file served by the API.
+critique → accept or abstain. **Stages stream in as they complete** (SSE), so on
+a local model you see `retrieve` land in half a second instead of watching a
+blank panel for fourteen. Then the full answer arrives with the per-stage trace,
+citations, retrieved context, and CRAG / guardrail / route badges. No Node, no
+npm, no build step; it is one HTML file served by the API.
 
 Try the built-in examples: an answerable question, an out-of-scope one (watch it
 abstain), a prompt injection (watch the guardrail fire and the trace stop before

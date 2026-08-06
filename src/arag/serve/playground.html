@@ -46,6 +46,10 @@
   .cite .id{font-family:var(--mono);color:var(--accent);font-size:11px}
   .cite .q{color:var(--dim)}
   .err{color:var(--bad)}
+  .live{border-left:2px solid var(--accent);padding-left:12px;margin:4px 0;font-size:13px;
+    font-family:var(--mono);animation:fade .25s ease-in}
+  @keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+  .live .t{color:var(--dim)}
   .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);
     border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -155,13 +159,43 @@ function render(d){
 async function ask(){
   const q = $("#q").value.trim(); if(!q) return;
   $("#go").disabled = true;
-  $("#out").innerHTML = `<div class="panel"><span class="spin"></span> running the pipeline…</div>`;
+  // Stages stream in as the pipeline finishes each one, so a slow local model
+  // shows progress instead of a blank panel for the whole query.
+  $("#out").innerHTML = `<div class="panel"><h2>Running</h2>
+     <div id="live"><span class="spin"></span> starting…</div></div>`;
+  const live = $("#live");
+  const t0 = performance.now();
   try{
-    const r = await fetch(API+"/query", {method:"POST",
+    const r = await fetch(API+"/query/stream", {method:"POST",
       headers:{"content-type":"application/json"},
       body: JSON.stringify({query:q, flags:flags()})});
-    if(!r.ok) throw new Error("HTTP "+r.status+" — "+(await r.text()).slice(0,200));
-    render(await r.json());
+    if(!r.ok || !r.body) throw new Error("HTTP "+r.status);
+    const reader = r.body.getReader(); const dec = new TextDecoder();
+    let buf = "", evt = null, answered = false;
+    for(;;){
+      const {value, done} = await reader.read(); if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const parts = buf.split("\n\n"); buf = parts.pop();
+      for(const block of parts){
+        for(const line of block.split("\n")){
+          if(line.startsWith("event:")) evt = line.slice(6).trim();
+          else if(line.startsWith("data:")){
+            const payload = JSON.parse(line.slice(5));
+            if(evt === "stage"){
+              if(live.querySelector(".spin")) live.innerHTML = "";
+              const meta = payload.meta ? Object.entries(payload.meta)
+                    .map(([k,v])=>`${k}=${v}`).join(" ") : "";
+              live.insertAdjacentHTML("beforeend",
+                `<div class="live">${esc(payload.stage)}
+                   <span class="t">${(payload.ms||0).toFixed(1)} ms · +${((performance.now()-t0)/1000).toFixed(1)}s</span>
+                   <span class="meta">${esc(meta)}</span></div>`);
+            } else if(evt === "answer"){ render(payload); answered = true; }
+            else if(evt === "error"){ throw new Error(payload.message); }
+          }
+        }
+      }
+    }
+    if(!answered) throw new Error("stream ended without an answer");
   }catch(e){
     $("#out").innerHTML = `<div class="panel err">${esc(e.message)}</div>`;
   }finally{ $("#go").disabled = false; }
