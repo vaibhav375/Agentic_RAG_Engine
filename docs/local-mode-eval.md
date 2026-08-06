@@ -20,9 +20,8 @@
 > | recall@1 / MRR | 0.948 / 0.989 |
 > | p50 latency | 13.6 s |
 >
-> **2 of 117 records flagged**, both a single unsupported clause on easy
-> questions. `contradicted_claim_rate` is **0.000** across the whole set —
-> nothing the model said contradicts the sources.
+> **2 of 117 records flagged**, both on easy questions — and both are genuine
+> model errors, detailed below.
 >
 > **The hardened adversarial slice did not break it.** Eight subtle false
 > premises were added — near-misses of real corpus facts (`minimum_size` 512 vs
@@ -38,10 +37,18 @@
 > contradicting it, not merely staying grounded. Both definitions are reported
 > (`adversarial_robustness_rate` and `..._grounded`).
 >
-> **Known remaining limit:** residual flags are NLI false negatives on
-> paraphrase, not fabrication. Citation precision 0.799 is the 3B model's
-> instruction-following; the isolated size comparison measured 0.812 vs 0.922
-> for the 7B.
+> **Both remaining flags are true positives — real model errors, not metric
+> artifacts.** e14 states that `use_cache=False` "ensures get_db runs only once
+> per request", when the corpus says it *forces the dependency to run every
+> time* — an inversion. e57 correctly describes middleware short-circuiting and
+> then adds an unsupported claim about a generic 500 response, which the corpus
+> attributes to unhandled handler exceptions. The NLI contradiction signal caught
+> both at 0.5. Earlier versions of this document said the residual flags were
+> paraphrase false negatives; after the citation, prompt and clause fixes that is
+> no longer true, and the claim is withdrawn.
+>
+> Citation precision 0.799 is the 3B model's instruction-following; the isolated
+> size comparison measured 0.812 vs 0.922 for the 7B.
 
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
@@ -404,6 +411,44 @@ all**, despite the prompt requiring one per sentence. Citation-format
 instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
+
+## The "better NLI model" hypothesis, refuted three times over
+
+The standing plan named a purpose-built fact verifier as the accuracy ceiling,
+on the grounds that every residual flag was an NLI paraphrase false negative.
+Both halves of that turned out to be wrong.
+
+Three candidates were probed against the two known failure pairs plus three
+controls (a supported main clause, a direct contradiction, an unrelated aside):
+
+| model | score |
+|---|---|
+| `cross-encoder/nli-deberta-v3-base` (current) | 3/5 |
+| `cross-encoder/nli-deberta-v3-large` | 3/5 — fails the compound conditional identically |
+| `MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli` | **3/5** — paraphrase 0.155, compound 0.002 |
+
+None beats the model already in use. The FEVER-trained candidate is trained
+specifically on fact verification and still cannot do the two things that matter
+here: recognise a paraphrase ("authenticated but lacks the necessary scope" ≡
+"authenticated but not allowed") or a claim that *narrows* a premise's condition.
+
+A trap worth recording: that model's label order is
+`{0: entailment, 1: neutral, 2: contradiction}` — **inverted** relative to the
+cross-encoder family the code assumes. Swapping it in without checking
+`config.id2label` would silently exchange entailment and contradiction.
+
+**And the premise was already stale.** The two records still flagged in the
+current run are genuine model errors, not false negatives — see the current-state
+box. The compound-conditional failure, which motivated this whole line, is
+already handled by clause decomposition, which strips the conditional and scores
+the main clause at 0.992. There is nothing left for a better NLI model to fix at
+this corpus size, so the item is closed rather than escalated.
+
+A process note: HHEM (`vectara/hallucination_evaluation_model`) was the first
+candidate tried and requires `trust_remote_code=True`, which downloads and
+executes `modeling_hhem_v2.py` from the Hub. That was started before thinking it
+through. Subsequent candidates were chosen for standard architectures that need
+no remote code execution.
 
 ## Hardening the adversarial slice — and a hand-check that was wrong
 
