@@ -40,7 +40,7 @@ def main() -> int:
         "agent.enabled": True, "agent.crag.enabled": True, "agent.critic": "nli",
     })
     t0 = time.time()
-    d = run_eval(cfg, tag="full_local_qwen3b")
+    d = run_eval(cfg, tag="full_local_hard")
     s = d["summary"]
     abst = sum(1 for r in d["detail"] if r["abstained"])
     answered = len(d["detail"]) - abst

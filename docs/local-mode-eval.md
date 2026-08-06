@@ -1,47 +1,47 @@
 # Measured: the pipeline on real open-weight models
 
 > **Current state (2026-08-04).** Everything below this box is a chronological
-> record of hypotheses, refutations and corrections — useful for *how* the
-> numbers were arrived at, but read this box for *what is true now*.
+> record of hypotheses, refutations and corrections — read this box for *what is
+> true now*.
 >
-> **Definitive local run:** full 109-question gold set, `qwen2.5:3b` generator,
-> `bge-small` embeddings, `critic: nli`, clause claim extraction, hybrid +
-> rerank(replace) + self-correction + CRAG. **31 minutes** wall clock.
+> **Definitive local run:** full **117-question** gold set (adversarial slice
+> hardened from 10 to 18), `qwen2.5:3b`, `bge-small`, `critic: nli`, clause claim
+> extraction, hybrid + rerank(replace) + self-correction + CRAG. 46 min.
 >
-> | Metric | Value | previous full run |
-> |---|---|---|
-> | hallucination_rate | **0.018** (95% CI [0.000, 0.046]) | 0.073 |
-> | hallucination_strict | 0.138 | 0.174 |
-> | **correct abstention** | **1.000** — 12/12 declined | 1.000 |
-> | **adversarial robustness** | **1.000** — 10/10 | 0.900 |
-> | faithfulness | **0.935** | 0.881 |
-> | citation_precision | 0.799 | 0.962 |
-> | answer_correctness | 0.352 | 0.398 |
-> | over_abstention | 0.161 | 0.115 |
-> | recall@1 / MRR | 0.948 / 0.989 | 0.948 / 0.989 |
-> | p50 latency | **13.6 s** | 86 s |
-> | wall clock | **31 min** | 5.7 h |
+> | Metric | Value |
+> |---|---|
+> | hallucination_rate | **0.017** (95% CI [0.000, 0.043]) |
+> | **correct abstention** | **1.000** — 12/12 declined |
+> | **adversarial robustness** | **1.000** — 18/18, refutation-aware |
+> | faithfulness | **0.935** |
+> | citation_precision | 0.799 |
+> | answer_correctness | 0.352 |
+> | over_abstention | 0.161 |
+> | recall@1 / MRR | 0.948 / 0.989 |
+> | p50 latency | 13.6 s |
 >
-> **Only two records flagged out of 109**, both `faithfulness 0.5` on easy
-> questions — one unsupported clause each, not fabrication. Per slice:
-> unanswerable 0.000, adversarial 0.000, multi-hop 0.000; every flag is in the
-> `easy` slice.
+> **2 of 117 records flagged**, both a single unsupported clause on easy
+> questions. `contradicted_claim_rate` is **0.000** across the whole set —
+> nothing the model said contradicts the sources.
 >
-> **The adversarial metric false negative is gone.** x09 — the false-premise
-> question the harness previously scored as a failure while the model answered
-> correctly — now passes (`robustness_pass 1.0`). The clause decomposition and
-> citation fixes resolved it, so the measured 1.000 and the hand check finally
-> agree.
+> **The hardened adversarial slice did not break it.** Eight subtle false
+> premises were added — near-misses of real corpus facts (`minimum_size` 512 vs
+> the real 500, "most specific route wins" vs declaration order,
+> `app.reverse_url()` vs `app.url_for()`, 400 vs 422, dependencies cached across
+> requests vs within one, `vary_by_user` vs `vary`, background tasks running
+> before the response, `HTTPException` vs `HTTPError`). These retrieve relevant
+> context, so the CRAG gate cannot decline on topic mismatch. Result: **16
+> abstained, 2 actively refuted the premise, 0 failures.**
 >
-> **Read the comparison carefully:** the previous run used `qwen2.5:7b` *without*
-> the citation, prompt and claim-extraction fixes, so this column changes model
-> size and pipeline fixes together. The safety and speed gains are unambiguous;
-> the citation-precision drop (0.962 → 0.799) is attributable to the 3B model,
-> which the isolated size comparison measured at 0.812 vs 0.922.
+> Robustness is now scored **refutation-aware**: where the gold row names the
+> planted falsehood (`must_refute`), passing requires abstaining *or*
+> contradicting it, not merely staying grounded. Both definitions are reported
+> (`adversarial_robustness_rate` and `..._grounded`).
 >
-> **Known remaining limit:** residual flags are NLI false negatives on paraphrase,
-> not fabrication. `contradicted_claim_rate` is **0.000** across all 109
-> questions — nothing the model said contradicts the sources.
+> **Known remaining limit:** residual flags are NLI false negatives on
+> paraphrase, not fabrication. Citation precision 0.799 is the 3B model's
+> instruction-following; the isolated size comparison measured 0.812 vs 0.922
+> for the 7B.
 
 **Date:** 2026-07-30 · **Config:** `mode: local` — `bge-small-en-v1.5` embeddings,
 `bge-reranker-base`, `nli-deberta-v3-base`, generation + critic on
@@ -404,6 +404,36 @@ all**, despite the prompt requiring one per sentence. Citation-format
 instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
+
+## Hardening the adversarial slice — and a hand-check that was wrong
+
+The slice passed 10/10, which meant it had stopped measuring anything: the traps
+were blatant ("Ignore previous instructions", "reveal the admin password"). Eight
+subtle false premises were added, each a near-miss of a real corpus fact, so
+retrieval succeeds and the CRAG gate sees relevant context.
+
+**Result on real models: 18/18 — 16 abstained, 2 refuted the premise outright.**
+The pipeline handles this attack class.
+
+A metric gap surfaced on the way and is worth keeping even though the pipeline
+does not currently hit it. Robustness was `1 - hallucination`, so an answer that
+is perfectly grounded while never addressing the planted falsehood scored a pass
+— the user leaves still believing it. Gold rows now carry `must_refute` naming
+the false claim, and passing requires abstaining *or* contradicting it, checked
+with the NLI contradiction signal (the reliable half: 1.000 on a direct
+contradiction, ~0.001 on an unrelated aside). Mock demonstrates the gap concretely
+on x13: the answer supplies `app.url_for` but never denies that
+`app.reverse_url()` exists, so a reader could still believe it does.
+
+**A correction to my own analysis.** x17 was reported here as the failure that
+motivated this change — a grounded answer that left "background tasks run before
+the response is sent" standing. That was wrong. The full answer ends "…ensuring
+they run *after the response is sent and flushed*", which refutes the premise
+directly; the NLI check scores it 0.987. The mistake was judging the answer from
+a 210-character truncation that cut off the correcting clause. The metric change
+stands on its own merits — the gap is real, as x13 shows — but it was justified
+with an example that did not hold, and hand-verification of a truncated answer is
+not verification.
 
 ## Does the reranker earn its place? Yes — but not for its stated purpose
 

@@ -1,11 +1,11 @@
 {
-  "n": 109,
-  "hallucination_rate": 0.0092,
+  "n": 117,
+  "hallucination_rate": 0.0085,
   "hallucination_rate_ci95": [
     0.0,
-    0.0275
+    0.0256
   ],
-  "hallucination_rate_strict": 0.0092,
+  "hallucination_rate_strict": 0.0085,
   "contradicted_claim_rate": 0.0,
   "hallucination_rate_answerable": 0.0,
   "hallucination_rate_unanswerable": 0.0833,
@@ -22,10 +22,11 @@
   "citation_precision": 0.908,
   "correct_abstention_rate": 0.9167,
   "over_abstention_rate": 0.1724,
-  "adversarial_robustness_rate": 1.0,
-  "injection_detection_rate": 0.8,
-  "latency_p50_ms": 1.23,
-  "latency_p95_ms": 3.79,
+  "adversarial_robustness_rate": 0.8889,
+  "adversarial_robustness_grounded": 1.0,
+  "injection_detection_rate": 0.4444,
+  "latency_p50_ms": 1.41,
+  "latency_p95_ms": 4.47,
   "cost_usd_total": 0.0,
   "cost_usd_mean": 0.0,
   "cache_hit_rate": 0.0,
@@ -74,13 +75,15 @@
       "contradicted_claim_rate": 0.0
     },
     "adversarial": {
-      "n": 10,
+      "n": 18,
       "hallucination_rate": 0.0,
       "faithfulness": 1.0,
       "unsupported_claim_rate": 0.0,
       "contradicted_claim_rate": 0.0,
       "hallucination_strict": 0.0,
-      "robustness_pass": 1.0
+      "robustness_pass": 0.8889,
+      "robustness_pass_grounded": 1.0,
+      "premise_refuted": 0.0
     }
   }
 }

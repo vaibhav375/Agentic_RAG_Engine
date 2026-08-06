@@ -30,12 +30,14 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > against. The larger set is the honest one, and its confidence interval is
 > narrow enough to mean something.
 >
-> **And on real open-weight models** (`qwen2.5:3b` + `bge-small`, same 109
-> questions, no API keys, 31 min): hallucination **1.8%** (95% CI [0%, 4.6%]),
+> **And on real open-weight models** (`qwen2.5:3b` + `bge-small`, **117**
+> questions, no API keys, 46 min): hallucination **1.7%** (95% CI [0%, 4.3%]),
 > **correct abstention 100%** — all 12 out-of-scope questions declined —
-> **adversarial robustness 100%**, faithfulness **0.935**, recall@1 **0.948**.
-> Only 2 of 109 records flagged, both a single unsupported clause rather than
-> fabrication, and `contradicted_claim_rate` is **0.000** across the whole set.
+> **adversarial robustness 100%** on a slice deliberately hardened with subtle
+> false premises (16 abstained, 2 refuted the premise outright), faithfulness
+> **0.935**, recall@1 **0.948**. Only 2 of 117 records flagged, each a single
+> unsupported clause rather than fabrication, and `contradicted_claim_rate` is
+> **0.000** across the whole set.
 > Full analysis in [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
 
 ## Why this is more than "a chatbot"
@@ -67,8 +69,11 @@ engineer is expected to know:
   loop; only complex ones pay for it (cost-aware design).
 - **Contextual chunk enrichment** — Anthropic-style "contextual retrieval": each
   chunk gets a situating prefix before embedding.
-- **Adversarial / prompt-injection robustness** — a dedicated eval slice of
-  injection and false-premise traps, with a robustness metric (100% on the set).
+- **Adversarial / prompt-injection robustness** — an 18-question slice of
+  injection traps *and subtle false premises* (a plausible wrong default, a
+  fabricated API name, an inverted guarantee). Scoring is **refutation-aware**:
+  a grounded answer that never addresses the planted falsehood does not pass,
+  because the reader still leaves believing it.
 - **Judge calibration + experiment registry** — the critic is validated against
   human labels (accuracy, Cohen's κ), and every eval run is logged with git SHA +
   config hash for traceable experiment tracking.
@@ -138,7 +143,7 @@ eval/
   calibrate_judge · registry (experiment tracking) · selective · dashboard
 data/
   corpus/*.md            authored, verifiable technical-docs corpus
-  eval/gold_qa.jsonl     109 Qs: easy / multi-hop / unanswerable / adversarial
+  eval/gold_qa.jsonl     117 Qs: easy / multi-hop / unanswerable / adversarial
   eval/judge_calibration.jsonl   human labels for judge calibration
 tests/  unit + integration (fixture corpus, mock mode)
 ```
