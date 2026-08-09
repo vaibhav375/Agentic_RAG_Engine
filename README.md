@@ -38,6 +38,15 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > **0.935**, recall@1 **0.948**. Only 2 of 117 records flagged, each a single
 > unsupported clause rather than fabrication, and `contradicted_claim_rate` is
 > **0.000** across the whole set.
+>
+> **Out-of-sample check.** Every threshold and prompt was tuned against this gold
+> set, so `eval.split` holds out a stratified quarter that nothing was tuned on.
+> The safety guarantees survive it intact — **abstention 1.000 and adversarial
+> robustness 1.000 on the holdout** — while the generation metrics come in
+> consistently lower (faithfulness 0.947 → 0.899, citation precision
+> 0.826 → 0.738, recall@1 0.962 → 0.905). Quote the headline with that column
+> beside it.
+>
 > Full analysis in [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
 
 ## Why this is more than "a chatbot"
@@ -378,6 +387,7 @@ make report        # render the PR eval-report comment locally (comment.md)
 make history       # experiment registry: recent runs (git sha + config hash)
 make selective     # risk–coverage analysis of the abstention gate (AUC)
 make sweep         # grid-sweep thresholds (NAME=abstention|crag|cache)
+ARAG_EVAL__SPLIT=holdout make eval   # out-of-sample: the quarter nothing was tuned on
 make dashboard     # self-contained HTML eval dashboard (open in a browser)
 ```
 

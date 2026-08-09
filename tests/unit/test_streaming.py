@@ -63,3 +63,59 @@ def test_answer_query_accepts_a_stage_callback(mock_cfg, tmp_path):
     assert seen, "no stages streamed"
     # Every streamed stage is also in the final trace, in the same order.
     assert [s.stage for s in seen] == [s.stage for s in ans.trace]
+
+
+# --------------------------------------------------- held-out eval split
+
+
+def _gold():
+    from eval.build_gold_set import load_gold
+    return load_gold("data/eval/gold_qa.jsonl")
+
+
+def test_dev_and_holdout_partition_the_set():
+    """Every question lands in exactly one half — no leakage, nothing dropped."""
+    from eval.run_eval import split_gold
+
+    g = _gold()
+    dev = {x.id for x in split_gold(g, "dev", 0.25, 20260804)}
+    hold = {x.id for x in split_gold(g, "holdout", 0.25, 20260804)}
+    assert not (dev & hold)
+    assert dev | hold == {x.id for x in g}
+
+
+def test_split_is_stratified_across_difficulties():
+    """A holdout missing a slice couldn't measure that slice's overfitting."""
+    from eval.run_eval import split_gold
+
+    g = _gold()
+    slices = {x.difficulty.value for x in g}
+    for part in ("dev", "holdout"):
+        got = {x.difficulty.value for x in split_gold(g, part, 0.25, 20260804)}
+        assert got == slices, f"{part} missing {slices - got}"
+
+
+def test_split_is_deterministic():
+    """A partition that moved between runs would make every comparison
+    meaningless — dev/holdout numbers would drift for no reason."""
+    from eval.run_eval import split_gold
+
+    g = _gold()
+    a = [x.id for x in split_gold(g, "holdout", 0.25, 20260804)]
+    assert a == [x.id for x in split_gold(g, "holdout", 0.25, 20260804)]
+
+
+def test_a_different_seed_gives_a_different_partition():
+    from eval.run_eval import split_gold
+
+    g = _gold()
+    a = {x.id for x in split_gold(g, "holdout", 0.25, 20260804)}
+    b = {x.id for x in split_gold(g, "holdout", 0.25, 999)}
+    assert a != b
+
+
+def test_all_is_the_default_and_returns_everything():
+    from eval.run_eval import split_gold
+
+    g = _gold()
+    assert len(split_gold(g, "all", 0.25, 20260804)) == len(g)
