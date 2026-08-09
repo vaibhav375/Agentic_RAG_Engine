@@ -177,6 +177,16 @@ eval:
   # (A `metric_judge_provider` key used to sit here and was never read. The
   # real control is `faithfulness_method` below, plus `llm.judge_model`.)
   subset: null                   # e.g. 20 to run a fast CI subset; null = all
+  # Held-out split. Thresholds, prompts and the CRAG gate were all tuned against
+  # the full gold set, so those numbers are in-sample. `split: holdout` evaluates
+  # only questions nothing was tuned against; the gap between dev and holdout is
+  # the overfitting you actually have.
+  #   all      -> every question (default; what the published numbers use)
+  #   dev      -> the tuning half
+  #   holdout  -> the untouched quarter
+  split: all                     # all | dev | holdout
+  holdout_fraction: 0.25
+  split_seed: 20260804           # fixed: a moving split makes runs incomparable
   retrieval_k: 10                # k for recall@k / precision@k on the ranked pool
   # recall@k at a generous k saturates at 1.0 on a small corpus, hiding every
   # ranking change. Also report recall at the k the generator actually reads,

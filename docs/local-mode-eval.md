@@ -412,6 +412,75 @@ instruction-following is weak at 3B, and that is now visible rather than hidden
 behind a parser that discarded every citation anyway. Worth re-measuring on the
 7B model, which is likelier to follow the format.
 
+## Held-out split: how much of this is in-sample?
+
+Every threshold, the prompt, the CRAG gate and the claim splitter were tuned
+while looking at the whole gold set. `eval.split` partitions it — stratified per
+difficulty, seeded, stable — into 89 dev and 28 holdout, so the gap between them
+estimates what that tuning bought. `qwen2.5:3b`, shipped config:
+
+| | dev (89) | holdout (28) |
+|---|---|---|
+| hallucination ↓ | 0.000 | **0.071** |
+| faithfulness ↑ | 0.947 | 0.899 |
+| citation_precision ↑ | 0.826 | 0.738 |
+| answer_correctness ↑ | 0.377 | 0.321 |
+| recall@1 ↑ | 0.962 | 0.905 |
+| **correct abstention** ↑ | **1.000** | **1.000** |
+| **adversarial robustness** ↑ | **1.000** | **1.000** |
+
+**The safety guarantees survive out-of-sample.** Abstention and adversarial
+robustness are 1.000 on questions nothing was tuned against. That is the
+project's central claim and it is the one that holds cleanly.
+
+**The generation metrics are consistently lower out-of-sample** — five of them,
+all in the same direction. Each individual gap is small and n=28 limits
+precision, so the honest reading is "consistent direction, imprecise magnitude",
+not a point estimate.
+
+**The hallucination gap needs care and is mostly not overfitting.** dev shows
+0.000 and holdout 0.071, but that is two records — e14 and e57, the same two
+genuine model errors identified earlier (the `use_cache` inversion and an
+unsupported claim about a 500 response). Both happened to fall in the holdout
+half. Two known errors over 28 questions is 7.1%; over 117 it is 1.7%. That is a
+denominator effect, not evidence that thresholds were fitted to the dev
+questions. Reporting it as "the true rate is 7.1%" would be as misleading as
+reporting 0.000 from dev.
+
+Practical consequence: the headline numbers are computed on the full set and are
+therefore dominated by dev (76% of it). They are the right number to quote as
+long as the holdout column is quoted beside them.
+
+## GraphRAG: not justified on this benchmark
+
+The spec's Phase 7 stretch goal was a knowledge-graph or parent-document
+retriever for multi-hop questions. The multi-hop slice does not support building
+one:
+
+| | n | hallucination | faithfulness | recall@1 |
+|---|---|---|---|---|
+| multi-hop (dev) | 10 | **0.000** | 0.925 | 0.850 |
+| multi-hop (holdout) | 3 | **0.000** | 1.000 | 0.667 |
+| easy (dev) | 56 | 0.000 | 0.938 | 0.982 |
+
+Zero hallucinations on multi-hop in both halves, with faithfulness at or above
+the easy slice. The one real signal is **recall@1**, which is lower on multi-hop
+(0.850 / 0.667) than on easy (0.982 / 0.944) — the right document is less often
+rank 1. But recall@3 and recall@k stay high enough that it reaches the generator
+anyway, and the answers come out grounded.
+
+So there is no failure for GraphRAG to fix here, and building a retrieval
+subsystem against a slice that already scores 0.000 would be optimising a
+non-problem — the same mistake the stronger-judge, stricter-prompt and better-NLI
+hypotheses all made.
+
+**The honest caveat is about the benchmark, not the technique.** 13 multi-hop
+questions over a 10-document corpus barely require hopping; a genuine multi-hop
+failure needs entity chains across many more documents. The correct next step, if
+multi-hop matters, is a corpus and question set that can actually exhibit the
+failure — not a retriever built speculatively against a benchmark that cannot
+show whether it helped.
+
 ## The "better NLI model" hypothesis, refuted three times over
 
 The standing plan named a purpose-built fact verifier as the accuracy ceiling,

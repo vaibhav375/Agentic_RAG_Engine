@@ -9,6 +9,7 @@ writes `eval/results/<tag>.json`.
 from __future__ import annotations
 
 import json
+import random
 import time
 from pathlib import Path
 
@@ -58,8 +59,44 @@ def stratified_subset(gold: list, n: int) -> list:
     return sorted(chosen, key=lambda g: order[id(g)])
 
 
+def split_gold(gold: list, split: str, holdout_fraction: float, seed: int) -> list:
+    """Partition the gold set into `dev` and `holdout`, deterministically.
+
+    Thresholds, prompts and the CRAG gate on this project were all tuned against
+    the whole gold set, which means the reported numbers are in-sample and
+    optimistic by an unknown amount. A held-out slice that nothing is tuned
+    against is the only way to find out how much.
+
+    Stratified per difficulty so both halves keep every slice, and seeded so the
+    partition is stable across runs — a split that moved between runs would make
+    every comparison meaningless.
+    """
+    if split == "all":
+        return gold
+    by_slice: dict[str, list] = {}
+    for g in gold:
+        by_slice.setdefault(g.difficulty.value, []).append(g)
+
+    holdout_ids: set[str] = set()
+    for name in sorted(by_slice):
+        items = sorted(by_slice[name], key=lambda g: g.id)
+        rng = random.Random(f"{seed}:{name}")          # per-slice, so adding a
+        rng.shuffle(items)                             # slice can't reshuffle others
+        n_hold = int(round(len(items) * holdout_fraction))
+        holdout_ids.update(g.id for g in items[:n_hold])
+
+    keep_holdout = split == "holdout"
+    return [g for g in gold if (g.id in holdout_ids) == keep_holdout]
+
+
 def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict:
     gold = load_gold(cfg.get("eval.gold_path", "data/eval/gold_qa.jsonl"))
+    gold = split_gold(
+        gold,
+        str(cfg.get("eval.split", "all")),
+        float(cfg.get("eval.holdout_fraction", 0.25)),
+        int(cfg.get("eval.split_seed", 20260804)),
+    )
     subset = cfg.get("eval.subset")
     if subset:
         gold = stratified_subset(gold, int(subset))
