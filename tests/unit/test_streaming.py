@@ -6,6 +6,8 @@ waited for the complete answer — on a local model that is ~14 seconds of blank
 panel. `Trace(on_stage=...)` is what makes it real.
 """
 
+import json
+
 from arag.common.telemetry import Trace
 
 
@@ -119,3 +121,39 @@ def test_all_is_the_default_and_returns_everything():
 
     g = _gold()
     assert len(split_gold(g, "all", 0.25, 20260804)) == len(g)
+
+
+def test_split_report_covers_the_whole_set_exactly_once(mock_cfg, tmp_path):
+    """The paired run must cost no more than one full run, and must not double-
+    count: dev + holdout together ask every gold question exactly once, so the
+    pooled summary has to match a plain `split: all` run's question count."""
+    from eval.run_eval import run_eval_split_report
+
+    cfg = mock_cfg.with_overrides(
+        {"eval.results_dir": str(tmp_path), "vector_store.persist_dir": str(tmp_path / "idx")}
+    )
+    out = run_eval_split_report(cfg, tag="t")
+
+    assert out["summary"]["n"] == len(_gold())
+    assert set(out["splits"]) == {"dev", "holdout"}
+    assert out["splits"]["dev"]["n"] + out["splits"]["holdout"]["n"] == out["summary"]["n"]
+    ids = [d["id"] for d in out["detail"]]
+    assert len(ids) == len(set(ids))
+    # The pooled summary is what the CI gate and PR report read.
+    assert json.loads((tmp_path / "t.json").read_text())["summary"]["n"] == out["summary"]["n"]
+
+
+def test_split_report_respects_a_pinned_split(mock_cfg, tmp_path):
+    """`--split holdout` runs only that half, with no `splits` comparison."""
+    from eval.run_eval import run_eval_split_report
+
+    cfg = mock_cfg.with_overrides(
+        {
+            "eval.split": "holdout",
+            "eval.results_dir": str(tmp_path),
+            "vector_store.persist_dir": str(tmp_path / "idx"),
+        }
+    )
+    out = run_eval_split_report(cfg, tag="t")
+    assert "splits" not in out
+    assert 0 < out["summary"]["n"] < len(_gold())

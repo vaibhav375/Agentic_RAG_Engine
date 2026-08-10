@@ -130,6 +130,15 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
                 "abstained": ans.abstained,
                 "route": ans.route,
                 "iterations": ans.iterations,
+                # The two signals that decide an abstention, so a bad abstention
+                # can be diagnosed from a saved run instead of re-run to find out
+                # which gate fired: CRAG "incorrect" declines before generating,
+                # an unsatisfied critic declines after the retry loop.
+                "retrieval_grade": ans.retrieval_grade,
+                "retrieval_grade_score": ans.retrieval_grade_score,
+                "support_fraction": (
+                    ans.critique.support_fraction if ans.critique is not None else None
+                ),
                 "retrieved_doc_ids": [rc.chunk.doc_id for rc in ans.contexts],
             }
         )
@@ -151,6 +160,54 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
         record_run(tag, out["config_flags"], summary)
     except Exception:
         pass
+    return out
+
+
+_RECORD_KEYS = ("id", "difficulty", "metrics", "latency_ms", "cost_usd", "from_cache")
+
+
+def run_eval_split_report(cfg, tag: str = "current", rebuild: bool = True) -> dict:
+    """Evaluate `dev` and `holdout` separately, and report both plus the pool.
+
+    The in-sample number alone is the one that flatters the pipeline, so the
+    default path reports the out-of-sample number next to it rather than making
+    it something you have to remember to ask for.
+
+    This costs no more than a single `split: all` run: dev and holdout partition
+    the gold set, so the two runs together ask exactly the same questions once.
+    The index is built once and both runs share the components.
+
+    `<tag>.json` keeps the pooled summary so the CI gate and PR report are
+    unaffected; per-split summaries are added under `splits`.
+    """
+    if str(cfg.get("eval.split", "all")) != "all":
+        return run_eval(cfg, tag=tag, rebuild=rebuild)  # caller pinned one split
+
+    store = build_index(cfg) if rebuild else None
+    comp = build_components(cfg, store=store)
+
+    runs = {
+        name: run_eval(
+            cfg.with_overrides({"eval.split": name}), tag=f"{tag}_{name}", comp=comp
+        )
+        for name in ("dev", "holdout")
+    }
+
+    detail = [d for r in runs.values() for d in r["detail"]]
+    pooled = aggregate([{k: d[k] for k in _RECORD_KEYS} for d in detail])
+    if comp.cache is not None:
+        pooled["cache_stats"] = comp.cache.stats()
+
+    out = {
+        "tag": tag,
+        "config_flags": _flags(cfg),
+        "summary": pooled,
+        "splits": {name: r["summary"] for name, r in runs.items()},
+        "detail": detail,
+    }
+    results_dir = Path(cfg.get("eval.results_dir", "eval/results"))
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / f"{tag}.json").write_text(json.dumps(out, indent=2))
     return out
 
 
