@@ -132,6 +132,13 @@ agent:
   # the model chose to paraphrase.
   claim_extraction: clause       # llm | clause
   nli_model: cross-encoder/nli-deberta-v3-base
+  # Pairs per NLI forward pass. The critic scores claims x premise units, so a
+  # long answer over ten chunks is several hundred pairs; deberta's disentangled
+  # attention allocates ~batch x heads x seq^2, and the library default of 32
+  # exhausted MPS mid-run (Ollama holds ~3.4 GiB of the same unified memory).
+  # Score-neutral — batching is bit-identical to 1.4e-5 — so this only trades a
+  # little throughput for not dying. Halves itself on an allocation failure.
+  nli_batch_size: 8
   support_threshold: 0.5         # min fraction of claims that must be supported
   # NLI entailment probability above which a claim counts as supported.
   # MEASURED INERT on this NLI model: a 9-point sweep at 0.3 / 0.5 / 0.7 gave
