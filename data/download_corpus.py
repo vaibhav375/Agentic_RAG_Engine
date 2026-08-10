@@ -28,7 +28,7 @@ RAW = "https://raw.githubusercontent.com/{repo}/{branch}/{path}"
 def list_markdown(repo: str, path: str, branch: str) -> list[str]:
     files: list[str] = []
     stack = [path]
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
         while stack:
             cur = stack.pop()
             r = client.get(API.format(repo=repo, path=cur), params={"ref": branch})
@@ -56,7 +56,7 @@ def main() -> int:
     md_files = list_markdown(args.repo, args.path, args.branch)[: args.limit]
     print(f"Found {len(md_files)} markdown files; downloading up to {args.limit}...")
 
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
         for i, fp in enumerate(md_files):
             url = RAW.format(repo=args.repo, branch=args.branch, path=fp)
             r = client.get(url)
