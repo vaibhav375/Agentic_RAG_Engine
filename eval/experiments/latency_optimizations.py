@@ -18,8 +18,14 @@ work entirely, once losing the script itself. Results are appended to
 `eval/results/opt_progress.json` as each config finishes, and completed configs
 are skipped on restart, so an interruption costs at most the config in flight.
 
-All three run in one process with the model pre-warmed: cross-run latency
-comparisons on this machine are confounded by Ollama model residency.
+Each config runs in its OWN process (see `_harness`). An earlier version ran all
+three in one, reasoning that a shared pre-warmed process removes Ollama model-
+residency confounds. That was backwards, and this file's own results show it:
+config B does strictly less work than A — same claim extraction, one fewer
+retry — yet measured 53.7s p50 against A's 42.6s, because B ran third with two
+previous arms' embedders, rerankers and NLI models still resident. A and B
+produced byte-identical quality on every metric, so the 11s gap was pure
+contamination. Pre-warming Ollama is still right; sharing an address space is not.
 """
 
 from __future__ import annotations
@@ -31,8 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from arag.common.config import load_config  # noqa: E402
-from eval.run_eval import run_eval  # noqa: E402
+from eval.experiments._harness import run_arm  # noqa: E402
 
 PROGRESS = Path("eval/results/opt_progress.json")
 MODEL = "qwen2.5:7b"
@@ -81,7 +86,6 @@ def main() -> int:
 
     done = json.loads(PROGRESS.read_text()) if PROGRESS.exists() else []
     completed = {r["tag"] for r in done}
-    cfg = load_config("config/config.yaml")
 
     for label, tag, over in RUNS:
         if tag in completed:
@@ -89,7 +93,7 @@ def main() -> int:
             continue
         t0 = time.time()
         print(f"\n>>> {label}", flush=True)
-        d = run_eval(cfg.with_overrides({**BASE, **over}), tag=tag)
+        d = run_arm({**BASE, **over}, tag=tag)
         s = d["summary"]
         abstained = sum(1 for r in d["detail"] if r["abstained"])
         answered = len(d["detail"]) - abstained

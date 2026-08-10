@@ -3,8 +3,13 @@
 The earlier 3B-vs-7B comparison used llama3.2:3b against qwen2.5:7b, which
 confounded model family with model size. This isolates size.
 
-Both run in one process with each model warmed before its own run, and results
-persist per config so an interruption costs at most the run in flight.
+Each model runs in its own process (see `_harness`), warmed before its run, with
+results persisted per config so an interruption costs at most the run in flight.
+
+One process per arm is the point, not a detail: the first attempt at this
+comparison ran both models in one process and concluded 7B cost 11x more than 3B.
+It didn't — Ollama spent 3.7 of that run's 4.6 hours swapping two resident models
+in and out. Two models never belong in one process on this machine.
 """
 from __future__ import annotations
 
@@ -15,8 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from arag.common.config import load_config  # noqa: E402
-from eval.run_eval import run_eval  # noqa: E402
+from eval.experiments._harness import run_arm  # noqa: E402
 
 PROGRESS = Path("eval/results/model_size_progress.json")
 BASE = {
@@ -36,7 +40,6 @@ def main() -> int:
 
     done = json.loads(PROGRESS.read_text()) if PROGRESS.exists() else []
     completed = {r["tag"] for r in done}
-    cfg = load_config("config/config.yaml")
     for model in ["qwen2.5:3b", "qwen2.5:7b"]:
         tag = "size_" + model.replace(":", "").replace(".", "")
         if tag in completed:
@@ -47,7 +50,7 @@ def main() -> int:
                          "messages": [{"role": "user", "content": "hi"}]})
         t0 = time.time()
         print(f"\n>>> {model}", flush=True)
-        d = run_eval(cfg.with_overrides({**BASE, "llm.ollama_model": model}), tag=tag)
+        d = run_arm({**BASE, "llm.ollama_model": model}, tag=tag)
         s = d["summary"]
         abst = sum(1 for r in d["detail"] if r["abstained"])
         answered = len(d["detail"]) - abst
