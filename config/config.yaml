@@ -68,6 +68,9 @@ chunking:
   strategy: recursive            # recursive | sentence | fixed
   chunk_size: 512                # tokens (approx, whitespace-token proxy)
   chunk_overlap: 64
+  pack_blocks: true              # merge consecutive short blocks (same section)
+                                 # up to chunk_size. false = one chunk per
+                                 # paragraph, which ignores chunk_size entirely
   contextual_enrichment: false   # Anthropic-style: prepend LLM-written context
                                  # to each chunk before embedding (ablation knob)
 

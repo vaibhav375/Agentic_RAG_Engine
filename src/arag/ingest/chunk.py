@@ -110,16 +110,49 @@ def chunk_document(doc: RawDoc, cfg) -> list[Chunk]:
     # recursive / sentence: respect section blocks, then window within a block if
     # it is longer than the budget. "sentence" packs whole sentences; "recursive"
     # packs token windows. Both keep section provenance.
+    #
+    # `pack_blocks` merges consecutive short blocks from the same section up to
+    # the budget. Without it every paragraph becomes a chunk however short it is,
+    # so `chunk_size` only ever acts as an upper bound and never as a target: on
+    # real docs (FastAPI markdown, 76% of blocks under 20 words) that produced
+    # 3173 chunks averaging 2.7% of a 512-word budget — one-line fragments too
+    # small to answer from, and 52 near-duplicate candidates per document
+    # competing in the ranking. Kept configurable because chunking is an
+    # ablation variable and the unpacked behaviour has to stay reproducible.
+    pack = bool(c.get("pack_blocks", True))
+    pending: list[str] = []
+    pending_len = 0
+    pending_section: str | None = None
+
+    def flush():
+        nonlocal pending, pending_len
+        if pending:
+            emit("\n\n".join(pending), pending_section)
+            pending = []
+            pending_len = 0
+
     for section, block in _iter_blocks_with_sections(doc.text):
         toks = _tokens(block)
-        if len(toks) <= size:
+        if len(toks) > size:
+            flush()  # oversized block: window it on its own, in document order
+            if strategy == "sentence":
+                _emit_by_sentences(block, section, size, overlap, emit)
+            else:
+                for _, w in _windows(toks, size, overlap):
+                    emit(" ".join(w), section)
+            continue
+        if not pack:
             emit(block, section)
             continue
-        if strategy == "sentence":
-            _emit_by_sentences(block, section, size, overlap, emit)
-        else:
-            for _, w in _windows(toks, size, overlap):
-                emit(" ".join(w), section)
+        # Never merge across a heading — a chunk spanning two sections would
+        # carry the wrong `section` provenance for half its text.
+        if pending and (section != pending_section or pending_len + len(toks) > size):
+            flush()
+        if not pending:
+            pending_section = section
+        pending.append(block)
+        pending_len += len(toks)
+    flush()
     return chunks
 
 
