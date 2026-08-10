@@ -154,15 +154,68 @@ def eval_cmd(
     config: str = typer.Option("config/config.yaml", "--config", "-c"),
     subset: int = typer.Option(0, "--subset", help="Evaluate only first N questions (0 = all)"),
     tag: str = typer.Option("current", "--tag"),
+    split: str = typer.Option(
+        "", "--split", help="all | dev | holdout (default: report dev and holdout side by side)"
+    ),
 ):
     """Run the eval harness over the gold set for the current config."""
-    from eval.run_eval import run_eval
+    from eval.run_eval import run_eval, run_eval_split_report
 
     cfg = load_config(config)
     if subset:
         cfg = cfg.with_overrides({"eval.subset": subset})
-    result = run_eval(cfg, tag=tag)
+    if split:
+        cfg = cfg.with_overrides({"eval.split": split})
+
+    # Pinning a single split runs just that one; otherwise report in-sample and
+    # out-of-sample together — same total cost, since the two splits partition
+    # the gold set — so the flattering number never travels on its own.
+    if str(cfg.get("eval.split", "all")) == "all":
+        result = run_eval_split_report(cfg, tag=tag)
+        _print_split_report(result)
+    else:
+        result = run_eval(cfg, tag=tag)
     console.print(json.dumps(result["summary"], indent=2))
+
+
+_SPLIT_REPORT_METRICS = (
+    "hallucination_rate",
+    "faithfulness",
+    "answer_correctness",
+    "citation_precision",
+    "correct_abstention_rate",
+    "adversarial_robustness_rate",
+    "recall_at_3",
+)
+
+
+def _print_split_report(result: dict) -> None:
+    """dev vs holdout vs pooled — the gap is the overfitting estimate."""
+    from rich.table import Table
+
+    splits = result.get("splits") or {}
+    table = Table(title="in-sample vs held-out", title_style="bold")
+    table.add_column("metric")
+    table.add_column("dev", justify="right")
+    table.add_column("holdout", justify="right")
+    table.add_column("gap", justify="right")
+    table.add_column("all", justify="right")
+    for name in _SPLIT_REPORT_METRICS:
+        dev, hold = splits.get("dev", {}).get(name), splits.get("holdout", {}).get(name)
+        if dev is None or hold is None:
+            continue
+        # "Worse on holdout" is a lower number except for hallucination, where
+        # it is a higher one; colour the gap by which direction it actually is.
+        gap = hold - dev
+        worse = gap > 0 if name == "hallucination_rate" else gap < 0
+        table.add_row(
+            name,
+            f"{dev:.3f}",
+            f"{hold:.3f}",
+            f"[{'red' if worse else 'green'}]{gap:+.3f}[/]",
+            f"{result['summary'].get(name, float('nan')):.3f}",
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

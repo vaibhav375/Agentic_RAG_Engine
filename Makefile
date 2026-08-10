@@ -32,7 +32,7 @@ ingest: ## Build indexes from the corpus
 serve: ## Run the API + zero-dependency playground UI at http://localhost:8000
 	$(PY) -m arag.cli serve --config $(CONFIG)
 
-eval: ## Run the eval harness for the current config over the gold set
+eval: ## Run the eval harness over the gold set (reports dev vs held-out)
 	$(PY) -m arag.cli eval --config $(CONFIG)
 
 ablation: ## Run the full ablation matrix and write RESULTS.md
