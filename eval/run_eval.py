@@ -97,6 +97,21 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
         float(cfg.get("eval.holdout_fraction", 0.25)),
         int(cfg.get("eval.split_seed", 20260804)),
     )
+    # Re-run a named handful — the cases a previous run got wrong — without
+    # paying for the whole gold set to reach them.
+    only_ids = cfg.get("eval.only_ids")
+    if only_ids:
+        keep = set(only_ids)
+        gold = [g for g in gold if g.id in keep]
+        missing = keep - {g.id for g in gold}
+        if missing:
+            # Silently evaluating fewer cases than asked for would read as a
+            # result rather than a typo.
+            raise ValueError(
+                f"eval.only_ids not found in gold set (or excluded by the "
+                f"active split): {sorted(missing)}"
+            )
+
     subset = cfg.get("eval.subset")
     if subset:
         gold = stratified_subset(gold, int(subset))

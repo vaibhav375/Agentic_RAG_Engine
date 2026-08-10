@@ -8,6 +8,8 @@ panel. `Trace(on_stage=...)` is what makes it real.
 
 import json
 
+import pytest
+
 from arag.common.telemetry import Trace
 
 
@@ -141,6 +143,37 @@ def test_split_report_covers_the_whole_set_exactly_once(mock_cfg, tmp_path):
     assert len(ids) == len(set(ids))
     # The pooled summary is what the CI gate and PR report read.
     assert json.loads((tmp_path / "t.json").read_text())["summary"]["n"] == out["summary"]["n"]
+
+
+def test_only_ids_evaluates_exactly_the_named_cases(mock_cfg, tmp_path):
+    """Re-running the handful a run got wrong shouldn't cost the whole gold set."""
+    from eval.run_eval import run_eval
+
+    want = ["e26", "m04"]
+    cfg = mock_cfg.with_overrides(
+        {
+            "eval.only_ids": want,
+            "eval.results_dir": str(tmp_path),
+            "vector_store.persist_dir": str(tmp_path / "idx"),
+        }
+    )
+    out = run_eval(cfg, tag="t")
+    assert [d["id"] for d in out["detail"]] == want
+
+
+def test_a_misspelled_only_id_fails_loudly(mock_cfg, tmp_path):
+    """Quietly evaluating fewer cases than asked for would read as a result."""
+    from eval.run_eval import run_eval
+
+    cfg = mock_cfg.with_overrides(
+        {
+            "eval.only_ids": ["e26", "nope-not-a-real-id"],
+            "eval.results_dir": str(tmp_path),
+            "vector_store.persist_dir": str(tmp_path / "idx"),
+        }
+    )
+    with pytest.raises(ValueError, match="nope-not-a-real-id"):
+        run_eval(cfg, tag="t")
 
 
 def test_split_report_respects_a_pinned_split(mock_cfg, tmp_path):
