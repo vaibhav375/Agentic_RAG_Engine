@@ -9,10 +9,11 @@ dist/
 venv/
 
 # Project artifacts
-.arag_index/
-# index built with real (sentence-transformers) embeddings
+# Every index dir, not just the two that existed when this was written: naming
+# one per config let `.arag_index_local_scaled/` (7 MB of binaries) go untracked-
+# but-not-ignored, which is how index binaries got committed once before.
 # NB: git has no trailing comments on pattern lines — they become part of the pattern
-.arag_index_local/
+.arag_index*/
 eval/results/*.json
 eval/results/*.png
 eval/results/dashboard.html
