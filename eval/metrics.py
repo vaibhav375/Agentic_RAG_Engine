@@ -16,7 +16,28 @@ GENERATION (given what it retrieved, is the answer right and grounded?)
                              (avoids grading the loop with its own judge).
 - answer_relevance         : embedding cosine(question, answer) — does the answer
                              actually address the question (RAGAS-style).
-- answer_correctness       : token-F1 vs the gold answer.
+- answer_correctness       : token-F1 vs the gold answer. TREAT AS A ROUGH
+                             SIGNAL, NOT A VERDICT — it rewards phrasing overlap
+                             and is blind to the token that decides the answer.
+                             Hand-checked against gold on 7 recovered answers
+                             (6 right, 1 wrong) it ranked them close to
+                             backwards: the one wrong answer scored highest
+                             (0.632 — it matches gold's wording and swaps only
+                             the entity, CORSMiddleware for GZipMiddleware),
+                             while a fully correct answer scored 0.000
+                             ("Routes are not authenticated by default" against
+                             gold "No; every route is public until you add a
+                             security dependency" — same meaning, no shared
+                             content tokens). Small aggregate differences in this
+                             metric therefore mean little.
+                             Two cheaper fixes were measured and both failed:
+                             NLI bidirectional entailment scores ~0.00 even for
+                             correct answers (the model won't entail terse gold
+                             fragments), and embedding cosine puts the wrong
+                             answer at 0.826, above four of the six correct ones.
+                             A semantic verdict needs an LLM judge — the judge
+                             role and judge_calibration.jsonl / Cohen's kappa
+                             already exist for exactly this kind of check.
 - hallucination            : 1 if the answer contradicts the sources or its core
                              is ungrounded (`eval.hallucination.mode: severity`).
                              An aside the sources merely don't mention is counted
