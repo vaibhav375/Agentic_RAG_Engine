@@ -3,6 +3,15 @@
 Thresholds, prompts, the CRAG gate and the claim splitter were all tuned while
 looking at the whole gold set. The dev/holdout gap is the honest estimate of how
 much that inflated the numbers.
+
+SUPERSEDED by `make eval`, which now reports dev against holdout by default and
+does it in one pass (the splits partition the gold set, so both halves share a
+single index build instead of paying for two). Prefer that; this script is kept
+because `local_dev.json` / `local_holdout.json` are cited in
+docs/local-mode-eval.md and rerunning it must keep reproducing those files.
+
+Do not add metrics here — add them to `run_eval_split_report`. Two
+implementations of the same number drift, and then neither can be trusted.
 """
 from __future__ import annotations
 
