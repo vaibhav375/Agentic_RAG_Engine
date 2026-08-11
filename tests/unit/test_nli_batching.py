@@ -55,6 +55,29 @@ def test_batch_halves_until_it_fits_and_still_returns_every_pair():
     assert out[0].entailment > 0.9
 
 
+def test_the_reduced_batch_size_sticks_for_later_calls():
+    """Re-paying the descent every call is what made a run 5x slower.
+
+    Each failed attempt costs a real forward pass before it raises, and memory
+    pressure that hit once is usually still there on the next query.
+    """
+    nli, fake = _nli(fits=2, batch_size=8)
+    nli.entail_batch([("p", "c")] * 4)
+    assert fake.batch_sizes == [8, 4, 2]
+
+    fake.batch_sizes.clear()
+    nli.entail_batch([("p", "c")] * 4)
+    assert fake.batch_sizes == [2]  # starts where it left off, no re-descent
+
+
+def test_the_fallback_is_logged(caplog):
+    """A silent fallback is indistinguishable from the machine being slow."""
+    nli, _ = _nli(fits=4, batch_size=8)
+    with caplog.at_level("WARNING"):
+        nli.entail_batch([("p", "c")])
+    assert "exhausted accelerator memory" in caplog.text
+
+
 def test_the_configured_batch_size_is_used_when_it_fits():
     nli, fake = _nli(fits=64, batch_size=8)
     nli.entail_batch([("p", "c")] * 3)

@@ -6,7 +6,11 @@ mode of LLM-as-judge)."""
 
 from __future__ import annotations
 
+import logging
+
 from arag.providers.base import MockNLI, NLIModel, NLIResult
+
+logger = logging.getLogger(__name__)
 
 
 def _free_accelerator_cache() -> None:
@@ -52,18 +56,21 @@ class CrossEncoderNLI(NLIModel):
             MPS backend out of memory (allocated 5.51 GiB, other allocations
             3.41 GiB, max allowed 9.07 GiB)
 
-        Losing a 20-minute eval arm to an allocator is a bad trade for throughput
-        that a smaller batch barely changes, and the same call runs in the serving
-        path where a crash is worse still. Batching is score-neutral (bit-identical
-        to 1.4e-5), so capping and retrying costs nothing but wall time.
+        Losing a 20-minute eval arm to an allocator is a bad trade, and the same
+        call runs in the serving path where a crash is worse still — so the batch
+        halves on failure instead. Recovering costs one wasted forward pass when
+        it happens; capping pre-emptively costs 33% forever (29.1 ms/pair at 32
+        against 38.9 at 8, measured on this machine), so the default stays high
+        and the fallback does the work. Batching is score-neutral either way
+        (bit-identical to 1.4e-5).
 
         PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 would also silence the error, by
         removing the limit that prevents a system-level failure. Not that.
         """
         import numpy as np
 
-        bs = self._batch_size
         while True:
+            bs = self._batch_size
             try:
                 return np.asarray(
                     self._model.predict(pairs, batch_size=bs, show_progress_bar=False)
@@ -71,8 +78,21 @@ class CrossEncoderNLI(NLIModel):
             except RuntimeError as exc:
                 if bs <= 1 or "out of memory" not in str(exc).lower():
                     raise
-                bs = max(1, bs // 2)
+                # Keep the reduced size. A local would make every later call
+                # re-pay the whole failing descent — each attempt costs a real
+                # forward pass before it fails — and memory pressure that hit
+                # once is usually still there on the next query.
+                self._batch_size = max(1, bs // 2)
                 _free_accelerator_cache()
+                # Loud, because a silent fallback is indistinguishable from the
+                # machine simply being slow, which is precisely the confusion it
+                # caused the first time.
+                logger.warning(
+                    "NLI batch %d exhausted accelerator memory; retrying at %d "
+                    "for the rest of this process",
+                    bs,
+                    self._batch_size,
+                )
 
     def entail_batch(self, pairs: list[tuple[str, str]]) -> list[NLIResult]:
         """One forward pass per batch — ~2.9x faster than looping, and
