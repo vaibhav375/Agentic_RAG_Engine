@@ -1,8 +1,14 @@
 # Measured: the pipeline on real open-weight models
 
-> **Current state (2026-08-04).** Everything below this box is a chronological
+> **Current state (2026-08-11).** Everything below this box is a chronological
 > record of hypotheses, refutations and corrections — read this box for *what is
 > true now*.
+>
+> **Since the run below was measured**, three things changed the code it ran on:
+> the chunker now packs short blocks (`chunk_size` had never applied to the
+> `recursive` strategy), the NLI batch is capped with a sticky fallback, and the
+> two abstention gates were isolated and diagnosed. The numbers in this box are
+> from *before* those changes; the deltas are in the last section.
 >
 > **Definitive local run:** full **117-question** gold set (adversarial slice
 > hardened from 10 to 18), `qwen2.5:3b`, `bge-small`, `critic: nli`, clause claim
@@ -15,8 +21,8 @@
 > | **adversarial robustness** | **1.000** — 18/18, refutation-aware |
 > | faithfulness | **0.935** |
 > | citation_precision | 0.799 |
-> | answer_correctness | 0.352 |
-> | over_abstention | 0.161 |
+> | answer_correctness | 0.352 — token-F1; **inverted on a hand-check**, treat as a rough signal only (see "The correctness metric ranks a wrong answer above a right one") |
+> | over_abstention | 0.161 — **diagnosed**: 5 CRAG gate, 9 critic; 6 of 7 recovered answers were correct |
 > | recall@1 / MRR | 0.948 / 0.989 |
 > | p50 latency | 13.6 s |
 >
@@ -946,3 +952,171 @@ Which is why `mock` stays the default for CI and iteration, and why
 questions would have shown `correct_abstention_rate` and
 `adversarial_robustness` with no unanswerable or adversarial question behind
 them.
+
+---
+
+# 2026-08-11 — three phantom findings, a chunker bug, and the abstention diagnosis
+
+## The measurement was contaminating itself
+
+A scaled-corpus run reported per-query latency 4× the small corpus, and I spent
+real effort explaining it — first blaming retrieval, then the retry rate. Both
+were wrong. The controlled measurement:
+
+| | p50 | mean | mean iterations |
+|---|---|---|---|
+| `scale_local_big`, 2nd arm in a shared process | 106.4 s | 134.2 s | 1.30 |
+| same 40 questions, alone in a clean process | **25.7 s** | 32.6 s | **1.30** |
+| small corpus, same 40 questions | 17.8 s | 19.7 s | 1.15 |
+
+Identical questions, identical config, identical iteration counts. The 4× was not
+a property of the corpus — it was `corpus_scale.py` running both arms in one
+process, so the second inherited the first's resident embedder, cross-encoder and
+NLI model. Real corpus-scale cost is **1.4×**.
+
+This was the *third* false conclusion from that one confound:
+
+1. "qwen2.5:7b costs 11× more than 3b" — Ollama swapping two resident models for
+   3.7 of that run's 4.6 hours.
+2. "retrieval is 7.7× slower at scale" — a stage profile that built both
+   component sets before timing either.
+3. "corpus scale costs 4× latency" — the above.
+
+`latency_optimizations.py` contained its own disproof the whole time: config B
+does strictly less work than A, yet measured 53.7 s p50 against A's 42.6 s, having
+run third — with byte-identical quality on every metric. And that file's docstring
+argued a shared pre-warmed process *removes* confounds, which is backwards and is
+why this survived three times.
+
+Fixed structurally rather than by remembering: `eval/experiments/_harness.py`
+spawns one process per arm, a crashed arm raises instead of being recorded as a
+data point, and the isolation is a test. **Quality metrics survive contamination;
+timings do not.**
+
+## `chunk_size` had never been applied
+
+`chunk_document` emitted every paragraph block as its own chunk whenever it fit
+the budget, so `chunk_size: 512` was only ever an upper bound — `recursive` was a
+paragraph splitter. The hand-written corpus hid it completely (uniform ~33-word
+paragraphs, 6.5% of budget). Real FastAPI markdown is 76% sub-20-word blocks:
+
+| | chunks | median words | budget used |
+|---|---|---|---|
+| `data/corpus` (10 docs) | 47 | 33 | 6.5% |
+| `data/corpus_scaled` (61 docs) | **3173** | **11** | **2.7%** |
+| scaled, with `pack_blocks` | 545 | 58 | 16% |
+
+3173 chunks averaging 14 words means one-line fragments too small to answer from
+and 52 near-duplicate candidates per document competing in the ranking — the
+likely driver of `context_precision` 0.501 → 0.297 at scale. Packing never merges
+across a heading (that would put the wrong `section` on half a chunk's text).
+Effect is size-insensitive above ~128 words, so `chunk_size` stays 512.
+
+On the small corpus this is roughly neutral and the CI gate passes:
+over_abstention 0.172 → 0.161, recall@3 0.977 → 0.989, recall@1 0.879 → 0.856,
+hallucination unchanged. **The scaled-corpus measurement was not run.**
+
+## Over-abstention is two unrelated bugs
+
+13 of the 14 over-abstentions had `recall_at_3` = 1.0 — retrieval had already
+found the answer. Isolating the gates over those 14 plus 30 refusal cases:
+
+| arm | over-abst | hallucination | correct-abst | adversarial |
+|---|---|---|---|---|
+| shipped | 0.857 | 0.000 | 1.000 | 1.000 |
+| `support_threshold: 0` (critic gate off) | 0.500 | 0.205 | 1.000 | 0.778 |
+| `crag.enabled: false` | 0.500 | 0.046 | 1.000 | 0.889 |
+
+(Enriched subset — arms comparable to each other, not to full-set numbers.)
+
+**5 are the CRAG gate declining before generating, 9 are the critic never
+accepting the answer.** The gates are not interchangeable: removing the critic
+costs 4× the hallucination that removing CRAG does, and `correct_abstention` stays
+1.000 even with CRAG entirely off — the critic refuses the unanswerable on its
+own. **The critic is the load-bearing safety gate.**
+
+Seven discarded answers were recovered and hand-checked against gold: **six were
+correct**. This is real lost coverage, not a mislabelled metric.
+
+One idea died in review rather than in code: "return the best-supported answer
+across iterations" would change nothing, because the retry loop already exits the
+moment `critique.supported` — an unsupported final critique means every iteration
+was unsupported.
+
+## The CRAG half is an in-sample threshold
+
+`incorrect_threshold: 0.51` was commented "tuned on the gold set". The five
+declined questions score 0.497 / 0.483 / 0.441 / 0.288 / 0.267 — three miss by
+under 0.03. Choosing on the **dev split alone** puts the boundary at 0.267, so
+0.25 carries margin. Full gold set, both arms:
+
+| threshold | over-abst | hallucination | correct-abst | adversarial | faithfulness |
+|---|---|---|---|---|---|
+| 0.51 (shipped) | 0.1379 | 0.0085 | 1.000 | 1.000 | 0.9275 |
+| 0.25 | **0.0805** | 0.0256 | 1.000 | 0.9444 | 0.9076 |
+
+All five recover, and over-abstention halves on **both** splits (dev 0.1364 →
+0.0758, holdout 0.1429 → 0.0952) — it is not another in-sample gain. The cost in
+question counts is ~5 answers recovered for 2 more hallucinations. That is a
+product decision rather than a measurement one, so **the shipped default stays
+0.51** pending it.
+
+Replacing the IDF-coverage signal with the cross-encoder reranker — free, since
+it is already computed — was tested and **refuted**: worse at every safety level
+(0.172 vs 0.460 false abstentions at 90% of unanswerable declined). Adversarial
+questions score 0.96–0.99 on a cross-encoder, because it measures relevance, and
+an out-of-scope question about a covered topic is still relevant. Relevance is not
+answerability.
+
+## The correctness metric ranks a wrong answer above a right one
+
+Of the seven recovered answers (six correct, one wrong), token-F1 ranked them
+close to backwards:
+
+| id | verdict vs gold | token-F1 | cosine |
+|---|---|---|---|
+| m06 | **wrong** (says `CORSMiddleware`, gold says `GZipMiddleware`) | **0.632** | 0.826 |
+| e26 | **correct** ("not authenticated by default" = "every route is public") | **0.000** | 0.625 |
+| e70 | correct | 0.615 | 0.846 |
+| m04 | correct | 0.462 | 0.862 |
+| m10 | correct | 0.400 | 0.791 |
+| e50 | correct | 0.333 | 0.537 |
+| e39 | correct | 0.250 | 0.527 |
+
+The wrong answer wins because it matches gold's phrasing and swaps only the
+entity that decides it. Two cheaper repairs were measured and both failed: NLI
+bidirectional entailment gives ~0.00 even for correct answers (it will not entail
+terse gold fragments like "True."), and embedding cosine puts the wrong answer
+above four of the six correct ones. **Nothing comparing surface similarity catches
+a one-entity swap.** A semantic verdict needs the LLM judge, for which the judge
+role and Cohen's κ calibration already exist.
+
+Consequence: small differences in `answer_correctness` anywhere in this document
+should not be leaned on. The retry-value conclusion earlier in this session cited
+a 0.369-vs-0.342 gap; that evidence is withdrawn, though the conclusion stands on
+faithfulness, citation precision and over-abstention.
+
+## An OOM that was worth more than the experiment it killed
+
+An eval arm died 7 minutes in with `MPS backend out of memory (allocated 5.51
+GiB, other allocations 3.41 GiB, max 9.07 GiB)`. `_score_claims` batches claims ×
+premise units in one call, so pairs grow with answer length and context count;
+deberta's disentangled attention allocates ~batch × heads × seq², and Ollama holds
+~3.4 GiB of the same unified memory. The library default of 32 had no headroom.
+
+The same call runs in the serving path, where crashing is worse than being slow.
+The batch now halves on allocation failure down to 1, the reduced size **sticks**
+for the rest of the process (re-descending every call cost a real forward pass
+each time), and the fallback is logged at WARNING — a silent fallback is
+indistinguishable from the machine being slow. Non-allocation errors are re-raised
+untouched.
+
+My first version of this fix had two flaws of its own: it re-descended from the
+configured size on every call, and it capped throughput pre-emptively for every
+backend rather than only after a real failure.
+
+## Not measured
+
+Deliberately left un-run: `pack_blocks` on the scaled corpus (where the effect
+should be largest), the reformulation recall@1 drop (0.867 → 0.800), and any
+intermediate CRAG threshold between 0.25 and 0.51.

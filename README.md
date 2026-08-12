@@ -305,7 +305,7 @@ contribution is visible:
 |---|---|
 | **Hallucination rate** (headline) | % of answers with ≥1 unsupported claim (unanswerable Qs: answering at all counts) |
 | Faithfulness / groundedness | fraction of answer claims entailed by retrieved context |
-| Answer correctness (token-F1) | overlap with the gold answer |
+| Answer correctness (token-F1) | overlap with the gold answer — **rough signal only**, see below |
 | Context precision / recall | retrieval quality vs. gold supporting docs |
 | Correct abstention | on unanswerable questions, does it decline instead of fabricating |
 | Latency p50/p95 & cost/query | with/without cache and router |
@@ -427,6 +427,21 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
   changed. `agent.critic: nli` is the measured best local config.
   This bullet previously read "the direction and mechanism hold in every mode";
   measurement disproved half of it.
+- **`answer_correctness` is token-F1, and it inverted on a hand-check.** Seven
+  answers the pipeline had discarded were recovered and graded against gold by
+  hand: six correct, one wrong. Token-F1 ranked them close to backwards. The one
+  *wrong* answer scored highest (0.632) because it matches gold's wording and
+  swaps only the entity that decides it (`CORSMiddleware` for `GZipMiddleware`),
+  while a fully *correct* answer scored 0.000 — "Routes are not authenticated by
+  default" against gold "No; every route is public until you add a security
+  dependency", same meaning, no shared content tokens. So small differences in
+  this metric mean little, here or in `docs/local-mode-eval.md`. Two cheaper
+  repairs were measured and both failed: NLI bidirectional entailment scores
+  ~0.00 even for correct answers (it won't entail terse gold fragments like
+  "True."), and embedding cosine puts the wrong answer at 0.826, above four of
+  the six correct ones. Nothing comparing surface similarity catches a
+  one-entity swap; a semantic verdict needs the LLM judge, for which the judge
+  role and Cohen's κ calibration already exist.
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
   neural embeddings — see the note in `RESULTS.md`.
 - **Reranking measurably costs ranking quality in `mock` mode** (recall@1
@@ -461,10 +476,39 @@ Concrete next steps, ordered by return-on-effort, with the knob that drives each
    breaks metrics out by slice, so the win is directly measurable).
 6. **Calibrate the abstention threshold.** `make sweep NAME=abstention` grids
    `agent.support_threshold` × `nli_entail_threshold` and reports the best point
-   that doesn't regress safety. On the current gold set the shipped defaults are
-   already optimal — the 10.4% over-abstention is driven by the CRAG gate and the
-   gold set's phrasing, not by these thresholds, so a bigger/realer gold set
-   (item 8) is the actual lever.
+   that doesn't regress safety — and on the current gold set those two are indeed
+   already optimal. This bullet used to attribute the remaining over-abstention to
+   "the CRAG gate and the gold set's phrasing". Measurement split that in two, and
+   only part of it was CRAG:
+
+   Of 14 over-abstentions, 13 had `recall_at_3` = 1.0 — retrieval had already
+   found the answer. Isolating the two gates (`eval/experiments/over_abstention.py`)
+   showed **5 are the CRAG gate declining before generating and 9 are the
+   post-generation critic never accepting the answer**. Seven of the discarded
+   answers were recovered and hand-checked against gold: **six were correct**, so
+   this is real lost coverage, not a mislabelled metric.
+
+   The two gates are not interchangeable. Removing the critic costs 4× the
+   hallucination that removing CRAG does (0.205 vs 0.046 on the enriched subset),
+   while `correct_abstention` stays 1.000 even with CRAG entirely off — the critic
+   refuses the unanswerable on its own. **The critic is the load-bearing safety
+   gate.**
+
+   The CRAG half is a threshold artifact: `incorrect_threshold: 0.51` was tuned
+   in-sample, and the five declined questions score 0.497 / 0.483 / 0.441 / 0.288 /
+   0.267 — three miss by under 0.03. Chosen on the dev split alone the boundary is
+   0.267. Measured over the full gold set, 0.25 recovers all five and halves
+   over-abstention on **both** splits (dev 0.1364 → 0.0758, holdout 0.1429 →
+   0.0952), at a cost of hallucination 0.0085 → 0.0256 and adversarial robustness
+   1.000 → 0.944. In question counts that is ~5 answers recovered for 2 more
+   hallucinations, which is a product decision rather than a measurement one, so
+   the shipped default stays 0.51 pending that call.
+
+   Replacing the gate's IDF-coverage signal with the cross-encoder reranker (free,
+   already computed) was tested and **refuted**: it is worse at every safety level
+   (0.172 vs 0.460 false abstentions at 90% of unanswerable declined). Adversarial
+   questions score 0.96–0.99 on a cross-encoder because it measures relevance, and
+   an out-of-scope question about a covered topic is still relevant.
 7. **Harden the semantic cache.** `make sweep NAME=cache` grids
    `cache.similarity_threshold`; watch `cache_false_hits` (already measured) to
    push hit-rate up without quality loss.
