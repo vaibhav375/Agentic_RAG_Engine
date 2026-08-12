@@ -45,12 +45,31 @@ def idf_coverage(store, query: str, contexts: list[RetrievedChunk]) -> float:
     return covered / total
 
 
+def _incorrect_threshold(crag: dict, mode: str) -> float:
+    """How far this gate can be relaxed depends on the critic standing behind it.
+
+    In `local`, the NLI critic refuses the unanswerable on its own — with the gate
+    disabled entirely, correct_abstention still measured 1.000 — so the gate can
+    be loosened to recover in-scope questions it was wrongly declining. In `mock`
+    the critic is a lexical stand-in that cannot do that, and the same value costs
+    correct_abstention 0.917 -> 0.667 for no coverage gain at all.
+
+    So the threshold is keyed by mode. A mode with no entry uses the base value,
+    which is the conservative one.
+    """
+    by_mode = crag.get("incorrect_threshold_by_mode") or {}
+    if hasattr(by_mode, "as_dict"):
+        by_mode = by_mode.as_dict()
+    base = crag.get("incorrect_threshold", 0.40)
+    return float(by_mode.get(mode, base))
+
+
 def grade_retrieval(store, query: str, contexts: list[RetrievedChunk], cfg) -> RetrievalGrade:
     crag = cfg.agent.get("crag", {})
     if hasattr(crag, "as_dict"):
         crag = crag.as_dict()
     correct_t = float(crag.get("correct_threshold", 0.55))
-    incorrect_t = float(crag.get("incorrect_threshold", 0.40))
+    incorrect_t = _incorrect_threshold(crag, str(cfg.get("mode", "mock")))
 
     score = round(idf_coverage(store, query, contexts), 4)
     if score >= correct_t:

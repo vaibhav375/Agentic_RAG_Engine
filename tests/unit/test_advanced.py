@@ -29,6 +29,41 @@ def test_crag_grades_out_of_scope_as_incorrect(mock_cfg):
     assert g.grade == "incorrect"
 
 
+def test_incorrect_threshold_is_keyed_by_mode(mock_cfg):
+    """How far this gate can be relaxed depends on the critic behind it.
+
+    In `local` the NLI critic refuses the unanswerable on its own, so the gate
+    can be loosened to stop declining in-scope questions. In `mock` the critic is
+    a lexical stand-in, and the same value measured correct_abstention
+    0.917 -> 0.667 for no coverage gain — so the modes must not share a value.
+    """
+    from arag.agent.retrieval_grader import _incorrect_threshold
+
+    crag = {"incorrect_threshold": 0.51, "incorrect_threshold_by_mode": {"local": 0.25, "api": 0.25}}
+    assert _incorrect_threshold(crag, "local") == 0.25
+    assert _incorrect_threshold(crag, "api") == 0.25
+    # An unlisted mode falls back to the base value, which is the conservative one.
+    assert _incorrect_threshold(crag, "mock") == 0.51
+    assert _incorrect_threshold({"incorrect_threshold": 0.4}, "local") == 0.4
+
+
+def test_the_mode_keyed_threshold_actually_changes_the_grade(mock_cfg):
+    """The wiring matters, not just the lookup: same context, different verdict."""
+    store = build_index(mock_cfg)
+    ctx = [_rc("The default widget color is blue.")]
+    q = "How do I configure Kubernetes horizontal pod autoscaling?"
+
+    strict = mock_cfg.with_overrides({"agent.crag.incorrect_threshold": 0.51})
+    assert grade_retrieval(store, q, ctx, strict).grade == "incorrect"
+
+    # Same query, but a mode whose entry relaxes the gate below this query's score.
+    relaxed = mock_cfg.with_overrides(
+        {"mode": "local", "agent.crag.incorrect_threshold": 0.51,
+         "agent.crag.incorrect_threshold_by_mode": {"local": 0.0}}
+    )
+    assert grade_retrieval(store, q, ctx, relaxed).grade != "incorrect"
+
+
 def test_decompose_splits_multihop():
     llm = MockLLM()
     subs = llm.decompose("Compare body validation status and a missing query parameter status")

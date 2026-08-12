@@ -500,9 +500,16 @@ Concrete next steps, ordered by return-on-effort, with the knob that drives each
    0.267. Measured over the full gold set, 0.25 recovers all five and halves
    over-abstention on **both** splits (dev 0.1364 → 0.0758, holdout 0.1429 →
    0.0952), at a cost of hallucination 0.0085 → 0.0256 and adversarial robustness
-   1.000 → 0.944. In question counts that is ~5 answers recovered for 2 more
-   hallucinations, which is a product decision rather than a measurement one, so
-   the shipped default stays 0.51 pending that call.
+   1.000 → 0.944 — ~5 answers recovered for 2 more hallucinations. **Adopted for
+   `local`/`api`.**
+
+   It is *not* adopted for `mock`, because the modes measured opposite. The gate
+   can only be relaxed as far as the critic behind it can cover, and mock's critic
+   is a lexical stand-in: at 0.25 it loses `correct_abstention` 0.917 → 0.667 and
+   adversarial 0.889 → 0.722 while gaining **no** coverage at all (over-abstention
+   is already flat at 0.1379 by 0.45). So `incorrect_threshold` is keyed by mode —
+   0.51 base, 0.25 for `local`/`api` — which is a measured property of the
+   pipeline, not a convenience.
 
    Replacing the gate's IDF-coverage signal with the cross-encoder reranker (free,
    already computed) was tested and **refuted**: it is worse at every safety level
