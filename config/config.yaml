@@ -160,7 +160,43 @@ agent:
     # implemented because an LLM answerability grader measured *worse* than the
     # heuristic on this corpus (3/4 vs 4/4, docs/local-mode-eval.md).
     correct_threshold: 0.55      # IDF-weighted query coverage >= -> answerable
-    incorrect_threshold: 0.51    # < -> out of scope, abstain (tuned on the gold set)
+    # < -> out of scope, abstain before generating.
+    #
+    # This threshold is MODE-DEPENDENT, and that is a measured fact rather than a
+    # convenience. How far the gate can safely be relaxed depends on how strong
+    # the critic behind it is, and the critic is a different thing in each mode.
+    #
+    # Was 0.51 everywhere, tuned against the whole gold set — it declined five
+    # in-scope questions, three by less than 0.03 (coverage 0.497, 0.483, 0.441
+    # against a 0.51 cut). Re-chosen on the *dev split alone*, where the largest
+    # threshold declining nothing answerable is 0.267; 0.25 takes that with margin.
+    #
+    # local (real NLI critic), full gold set, 0.51 -> 0.25:
+    #   over_abstention   0.1379 -> 0.0805   (all five recovered)
+    #   dev / holdout     0.1364 -> 0.0758  |  0.1429 -> 0.0952
+    #   hallucination     0.0085 -> 0.0256   (1 -> 3 questions of 117)
+    #   adversarial       1.0000 -> 0.9444   (17 of 18)
+    #   correct_abstention stays 1.000
+    # It improves on the *holdout* too, so it is not another in-sample gain. The
+    # safety cost was an explicit trade: ~5 answers recovered for 2 more
+    # hallucinations. Affordable only because the gate is not the load-bearing
+    # safety mechanism there — with CRAG disabled entirely, correct_abstention
+    # still measured 1.000, the post-generation critic refusing the unanswerable
+    # on its own.
+    #
+    # mock (lexical stand-in critic) tells the opposite story, so the same value
+    # must NOT be used there:
+    #   thresh   correct_abst  adversarial  over_abst  hallucination
+    #   0.51           0.9167       0.8889     0.1609         0.0085
+    #   0.45           0.8333       0.8333     0.1379         0.0171
+    #   0.25           0.6667       0.7222     0.1379         0.0342
+    # Every bit of coverage is already recovered by 0.45; below it over_abstention
+    # is flat while safety keeps falling — pure loss. Mock leans on this gate
+    # because its critic cannot catch what the gate lets through.
+    incorrect_threshold: 0.51      # applies to any mode not listed below
+    incorrect_threshold_by_mode:
+      local: 0.25
+      api: 0.25
   # Query router: send trivially-simple queries straight to generation and only
   # complex ones through the full loop (cost-aware). Classifier is heuristic +
   # optional LLM.
@@ -237,7 +273,9 @@ eval:
       agent.nli_entail_threshold: [0.3, 0.5, 0.7]
     crag:
       agent.crag.correct_threshold: [0.5, 0.55, 0.6]
-      agent.crag.incorrect_threshold: [0.45, 0.51, 0.55]
+      # Spans the old in-sample value and the dev-chosen one, so a re-sweep can
+      # see the whole trade rather than three points around the old default.
+      agent.crag.incorrect_threshold: [0.20, 0.25, 0.30, 0.40, 0.51]
     cache:
       cache.similarity_threshold: [0.9, 0.95, 0.98]
   # CI regression gate + PR eval-report bot. These are the defaults; the

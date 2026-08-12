@@ -1057,9 +1057,34 @@ under 0.03. Choosing on the **dev split alone** puts the boundary at 0.267, so
 
 All five recover, and over-abstention halves on **both** splits (dev 0.1364 →
 0.0758, holdout 0.1429 → 0.0952) — it is not another in-sample gain. The cost in
-question counts is ~5 answers recovered for 2 more hallucinations. That is a
-product decision rather than a measurement one, so **the shipped default stays
-0.51** pending it.
+question counts is ~5 answers recovered for 2 more hallucinations. That trade was
+taken deliberately: **adopted for `local`/`api`.**
+
+### …but mock measured the opposite, so the threshold is mode-keyed
+
+Applying 0.25 everywhere failed the CI gate. In mock:
+
+| threshold | correct_abst | adversarial | over_abst | hallucination |
+|---|---|---|---|---|
+| 0.51 | 0.9167 | 0.8889 | 0.1609 | 0.0085 |
+| 0.45 | 0.8333 | 0.8333 | 0.1379 | 0.0171 |
+| 0.35–0.40 | 0.8333 | 0.7222 | 0.1379 | 0.0171 |
+| 0.25–0.30 | 0.6667 | 0.7222 | 0.1379 | 0.0342 |
+
+Every bit of coverage is already recovered by 0.45; below it over-abstention is
+flat while safety keeps falling — pure loss. The reason is the same one that made
+0.25 safe in local mode, running backwards: **the gate can only be relaxed as far
+as the critic behind it can cover.** Local's NLI critic refuses the unanswerable
+on its own (correct_abstention 1.000 with CRAG fully off); mock's lexical
+stand-in cannot, so mock leans on the gate.
+
+So `incorrect_threshold` is keyed by mode — 0.51 base, 0.25 for `local`/`api`.
+That is a measured property of the pipeline rather than a convenience, and an
+unlisted mode falls back to the conservative base.
+
+Worth noting how close this came to shipping wrong: the local-mode measurement was
+clean, held out-of-sample, and pointed one direction. Only running the mock gate
+caught that it pointed the other way there.
 
 Replacing the IDF-coverage signal with the cross-encoder reranker — free, since
 it is already computed — was tested and **refuted**: worse at every safety level
