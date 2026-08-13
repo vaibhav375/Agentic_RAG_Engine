@@ -26,9 +26,38 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
+_FROZEN: dict[str, str] = {}
+
+
+def _freeze(config: str) -> str:
+    """Snapshot the config once per experiment, so arms cannot read different ones.
+
+    Each arm is a fresh child that loads the config file when it starts, which
+    means an edit landing mid-experiment splits the run: a `chunk_packing` run
+    had its first arm read `incorrect_threshold: 0.51` and its second read 0.25,
+    because a config commit landed during the 4.7 hours between them. The arms
+    graded 9 and 3 questions "incorrect" respectively, and the comparison was
+    worthless — the variable under test was not the only thing that changed.
+
+    Freezing costs nothing and removes a whole class of silent invalidation:
+    every arm of one experiment now reads one immutable snapshot, taken before
+    the first arm starts.
+    """
+    if config not in _FROZEN:
+        import yaml
+
+        sys.path.insert(0, str(_ROOT))
+        from arag.common.config import load_config
+
+        path = Path(tempfile.mkdtemp(prefix="arag-frozen-")) / "config.yaml"
+        path.write_text(yaml.safe_dump(load_config(config).as_dict()))
+        _FROZEN[config] = str(path)
+        print(f"[harness] config frozen for this experiment: {path}", flush=True)
+    return _FROZEN[config]
 
 
 def run_arm(
@@ -44,7 +73,8 @@ def run_arm(
     is never silently recorded as a result.
     """
     proc = subprocess.run(
-        [sys.executable, "-m", "eval.experiments._harness", config, tag, json.dumps(overrides)],
+        [sys.executable, "-m", "eval.experiments._harness",
+         _freeze(config), tag, json.dumps(overrides)],
         cwd=_ROOT,
         timeout=timeout,
     )
