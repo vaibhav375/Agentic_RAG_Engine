@@ -1057,41 +1057,59 @@ under 0.03. Choosing on the **dev split alone** puts the boundary at 0.267, so
 
 All five recover, and over-abstention halves on **both** splits (dev 0.1364 →
 0.0758, holdout 0.1429 → 0.0952) — it is not another in-sample gain. The cost in
-question counts is ~5 answers recovered for 2 more hallucinations. That trade was
-taken deliberately: **adopted for `local`/`api`.**
+question counts is ~5 answers recovered for 2 more hallucinations.
 
-### …but mock measured the opposite, so the threshold is mode-keyed
+### Adopted, then reverted — the holdout is why
 
-Applying 0.25 everywhere failed the CI gate. In mock:
+It shipped, and validating it against the run history reversed the decision. The
+per-split counts:
 
-| threshold | correct_abst | adversarial | over_abst | hallucination |
+| | dev hallucinated | dev over-abst | holdout hallucinated | holdout over-abst |
 |---|---|---|---|---|
-| 0.51 | 0.9167 | 0.8889 | 0.1609 | 0.0085 |
-| 0.45 | 0.8333 | 0.8333 | 0.1379 | 0.0171 |
-| 0.35–0.40 | 0.8333 | 0.7222 | 0.1379 | 0.0171 |
-| 0.25–0.30 | 0.6667 | 0.7222 | 0.1379 | 0.0342 |
+| 0.51 | **0** | 9/66 | **1** | 3/21 |
+| 0.25 | 1 | 5/66 | 2 | 2/21 |
 
-Every bit of coverage is already recovered by 0.45; below it over-abstention is
-flat while safety keeps falling — pure loss. The reason is the same one that made
-0.25 safe in local mode, running backwards: **the gate can only be relaxed as far
-as the critic behind it can cover.** Local's NLI critic refuses the unanswerable
-on its own (correct_abstention 1.000 with CRAG fully off); mock's lexical
-stand-in cannot, so mock leans on the gate.
+**Out-of-sample it recovers one question and costs one hallucination.** The gain
+is concentrated on dev — which is where the threshold was chosen, so this is mild
+overfitting to dev, visible only because the split exists. Not worth tripling the
+headline metric, so `incorrect_threshold` stays **0.51**.
 
-So `incorrect_threshold` is keyed by mode — 0.51 base, 0.25 for `local`/`api`.
-That is a measured property of the pipeline rather than a convenience, and an
-unlisted mode falls back to the conservative base.
+Two things survive the revert. The threshold is genuinely **mode-sensitive**:
+applying 0.25 everywhere failed the CI gate, because in mock it costs
+correct_abstention 0.917 -> 0.667 and adversarial 0.889 -> 0.722 while gaining no
+coverage at all (over-abstention is flat by 0.45). The gate can only be relaxed as
+far as the critic behind it can cover, and mock's lexical stand-in cannot cover
+it. And **0.45 is an untested middle** that would recover the two highest-scoring
+of the five (0.497, 0.483) — queued in `crag_threshold.py`.
 
-Worth noting how close this came to shipping wrong: the local-mode measurement was
-clean, held out-of-sample, and pointed one direction. Only running the mock gate
-caught that it pointed the other way there.
+## The best configuration measured so far
 
-Replacing the IDF-coverage signal with the cross-encoder reranker — free, since
-it is already computed — was tested and **refuted**: worse at every safety level
-(0.172 vs 0.460 false abstentions at 90% of unanswerable declined). Adversarial
-questions score 0.96–0.99 on a cross-encoder, because it measures relevance, and
-an out-of-scope question about a covered topic is still relevant. Relevance is not
-answerability.
+Comparing like-for-like on the full 117-question gold set, local mode, isolating
+one change per column:
+
+| metric | old chunker + 0.51 | **new chunker + 0.51** | new chunker + 0.25 |
+|---|---|---|---|
+| hallucination | 0.0171 | **0.0085** | 0.0256 |
+| adversarial | 1.0000 | **1.0000** | 0.9444 |
+| correct_abstention | 1.0000 | **1.0000** | 1.0000 |
+| faithfulness | 0.9352 | 0.9275 | 0.9076 |
+| citation_precision | **0.7989** | 0.7414 | 0.7299 |
+| over_abstention | 0.1609 | 0.1379 | **0.0805** |
+| recall@1 | 0.9483 | **0.9598** | **0.9598** |
+| MRR | 0.9885 | **0.9943** | **0.9943** |
+
+**`new chunker + 0.51` is the best version of this pipeline to date** — the lowest
+hallucination ever measured in local mode, adversarial and abstention both 1.000,
+best recall@1 and MRR, and better over-abstention than the pre-chunker baseline.
+That is what is shipped.
+
+The chunker fix carries one genuine cost: citation precision 0.7989 -> 0.7414.
+Packed chunks are larger, so a citation points at more surrounding text.
+
+The equivalent mock series shows no degradation either — hallucination, correct
+abstention, adversarial and faithfulness all unchanged since 08-06, over-abstention
+0.1724 -> 0.1609 and recall@3 0.977 -> 0.989 better, with recall@1 0.879 -> 0.856
+the one regression.
 
 ## The correctness metric ranks a wrong answer above a right one
 

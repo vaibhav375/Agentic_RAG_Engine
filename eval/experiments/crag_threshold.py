@@ -43,7 +43,22 @@ BASE = {
     "retrieval.use_hybrid": True, "retrieval.use_rerank": True,
     "agent.enabled": True, "agent.crag.enabled": True, "agent.critic": "nli",
 }
-ARMS = [("t051_shipped", 0.51), ("t025_candidate", 0.25)]
+ARMS = [
+    ("t051_shipped", 0.51),      # measured — the shipped value, and the best so far
+    ("t025_candidate", 0.25),    # measured — reverted, see below
+    # QUEUED, not yet run. 0.25 looked like a clear win on dev (over_abstention
+    # 0.1379 -> 0.0805) and was adopted, then reverted: on the holdout it bought
+    # one recovered question for one extra hallucination, and cost adversarial
+    # robustness 1.000 -> 0.944. The gain was concentrated on dev because dev is
+    # where the threshold was chosen.
+    #
+    # 0.45 is the untested middle: it would recover the two highest-scoring of the
+    # five wrongly-declined questions (idf 0.497 and 0.483) while still declining
+    # the three lowest (0.441, 0.288, 0.267). Whether that keeps hallucination at
+    # 0.0085 is the open question. Completed arms are skipped, so a run measures
+    # only this one (~76 min on an idle machine).
+    ("t045_middle", 0.45),
+]
 KEYS = ["n", "hallucination_rate", "faithfulness", "citation_precision",
         "answer_correctness", "over_abstention_rate", "correct_abstention_rate",
         "adversarial_robustness_rate", "recall_at_1", "latency_p50_ms"]
