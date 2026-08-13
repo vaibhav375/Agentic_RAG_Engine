@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -57,6 +58,34 @@ def test_run_arm_applies_overrides_per_arm(tmp_path):
     assert a["config_flags"]["use_hybrid"] is False
     assert b["config_flags"]["use_hybrid"] is True
     assert a["summary"]["n"] == b["summary"]["n"]
+
+
+def test_every_arm_reads_one_frozen_config(monkeypatch, tmp_path):
+    """A config edit landing mid-experiment must not split the arms.
+
+    It happened: `chunk_packing`'s first arm read incorrect_threshold 0.51 and its
+    second read 0.25, because a commit landed during the 4.7 hours between them.
+    They graded 9 and 3 questions "incorrect" and the comparison was worthless —
+    the variable under test was not the only thing that changed.
+    """
+    import eval.experiments._harness as h
+
+    h._FROZEN.clear()
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd[3])  # the config path handed to the child
+        (tmp_path / f"{cmd[4]}.json").write_text(json.dumps({"summary": {"n": 0}}))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    h.run_arm({}, tag="a", results_dir=str(tmp_path))
+    h.run_arm({}, tag="b", results_dir=str(tmp_path))
+
+    assert seen[0] == seen[1], "arms read different config files"
+    assert seen[0] != "config/config.yaml", "child read the live file, not a snapshot"
+    assert Path(seen[0]).exists()
+    h._FROZEN.clear()
 
 
 def test_a_failed_arm_raises_instead_of_recording_a_result(tmp_path):
