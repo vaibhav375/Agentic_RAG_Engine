@@ -193,10 +193,26 @@ agent:
     # Every bit of coverage is already recovered by 0.45; below it over_abstention
     # is flat while safety keeps falling — pure loss. Mock leans on this gate
     # because its critic cannot catch what the gate lets through.
-    incorrect_threshold: 0.51      # applies to any mode not listed below
-    incorrect_threshold_by_mode:
-      local: 0.25
-      api: 0.25
+    # 0.25 was adopted for local/api and then REVERTED. On dev it looked like a
+    # clear win (over_abstention 0.1379 -> 0.0805, all five recovered), but the
+    # holdout — which nothing was tuned against — showed the gain was mostly where
+    # the threshold had been chosen: out-of-sample it recovered 1 question and
+    # cost 1 hallucination, while dropping adversarial robustness 1.000 -> 0.944
+    # and tripling hallucination overall (0.0085 -> 0.0256).
+    #
+    # 0.51 with the packed chunker is the best configuration measured on this
+    # project: hallucination 0.0085, adversarial 1.000, correct_abstention 1.000,
+    # recall@1 0.9598, MRR 0.9943 — and over_abstention 0.1379, still better than
+    # the 0.1609 it was before the chunker fix.
+    #
+    # Anyone lowering this should know it is mode-sensitive: how far the gate can
+    # relax depends on the critic behind it. In local the NLI critic refuses the
+    # unanswerable on its own (correct_abstention stayed 1.000 with CRAG fully
+    # off); in mock the lexical stand-in cannot, and 0.25 there costs
+    # correct_abstention 0.917 -> 0.667 for no coverage gain at all. Untested
+    # middle ground: 0.45 would recover the two highest-scoring of the five
+    # (0.497, 0.483) — see eval/experiments/crag_threshold.py.
+    incorrect_threshold: 0.51
   # Query router: send trivially-simple queries straight to generation and only
   # complex ones through the full loop (cost-aware). Classifier is heuristic +
   # optional LLM.
