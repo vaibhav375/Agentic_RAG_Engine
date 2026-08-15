@@ -1104,7 +1104,36 @@ best recall@1 and MRR, and better over-abstention than the pre-chunker baseline.
 That is what is shipped.
 
 The chunker fix carries one genuine cost: citation precision 0.7989 -> 0.7414.
-Packed chunks are larger, so a citation points at more surrounding text.
+Traced to root cause, and it is not what the drop looks like.
+
+Only ~10% of it is a mix effect (fewer abstentions, and an abstention scores 1.0
+by contract). The rest is real: on the 73 questions answered in both runs,
+citation precision fell 0.7603 -> 0.7055, and the regressions are 1.00 -> 0.00
+flips rather than gradual decay. Re-running six of them under both chunkers, five
+produced **zero** citations when packed and correct citations when not.
+
+The first hypothesis was a formatting one: packed chunk text carries internal
+blank lines, and passages in the prompt were joined with a single newline, so the
+split inside a passage was stronger than the split between them. Real bug, fixed —
+and it recovered exactly one of the six.
+
+The actual cause is the model. Given packed (longer) context the 3B writes a
+longer answer and silently drops the citation instruction:
+
+| | words | cites |
+|---|---|---|
+| unpacked | 25 | `[05_middleware::0]` |
+| packed | 62 | none |
+
+Across the six: answers that cited averaged 12 words, answers that did not
+averaged 46. Nothing is truncated — output is 62 words against a 1024-token cap.
+This is the same instruction-crowding failure recorded earlier in this document
+(where a *stricter* prompt measured worse on a 3B model), reached through context
+length instead of prompt length.
+
+Not yet fixed. A prompt change is the obvious lever and the obvious trap — this
+project has already measured one making things worse — so it needs the full gold
+set, not the six questions that exposed it.
 
 The equivalent mock series shows no degradation either — hallucination, correct
 abstention, adversarial and faithfulness all unchanged since 08-06, over-abstention

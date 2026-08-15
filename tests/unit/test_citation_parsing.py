@@ -107,3 +107,35 @@ def test_score_claims_handles_empty_input(mock_cfg):
 
     assert _score_claims(MockNLI(), [], ["a claim here"]) == [(0.0, 0.0)]
     assert _score_claims(MockNLI(), [], []) == []
+
+
+def test_packed_chunks_do_not_blur_the_passage_boundary():
+    """A passage must be visually separable from the one before it.
+
+    The prompt tells the model to copy the id "at the start of that passage",
+    which requires seeing where a passage starts. Passages were joined with a
+    single newline, which worked only while every chunk was one paragraph. Packed
+    chunks carry internal blank lines, so the split inside a passage became
+    stronger than the split between passages — and the model stopped citing
+    entirely: 5 of 6 affected gold questions produced zero citations.
+    """
+    from arag.providers.llm import _context_block
+
+    packed = "first block\n\nsecond block\n\nthird block"
+    block = _context_block([("doc::0", packed), ("doc::1", "another chunk")])
+
+    passages = block.split("\n\n")
+    assert len(passages) == 2, "a chunk's own blank lines must not create passages"
+    assert passages[0].startswith("[doc::0] ")
+    assert passages[1].startswith("[doc::1] ")
+    # Content is preserved, only the blank lines between blocks collapse.
+    for part in ("first block", "second block", "third block"):
+        assert part in passages[0]
+
+
+def test_context_block_keeps_every_id_at_a_passage_start():
+    from arag.providers.llm import _context_block
+
+    ctx = [("a::0", "text\n\n\nwith gaps"), ("b::1", "  padded  "), ("c::2", "")]
+    for line in _context_block(ctx).split("\n\n"):
+        assert line.startswith("["), f"passage does not begin with an id: {line!r}"

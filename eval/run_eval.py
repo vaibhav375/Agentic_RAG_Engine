@@ -155,6 +155,12 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
                     ans.critique.support_fraction if ans.critique is not None else None
                 ),
                 "retrieved_doc_ids": [rc.chunk.doc_id for rc in ans.contexts],
+                # citation_precision is 0.0 both when every cited doc is wrong and
+                # when the answer parsed no citations at all — two very different
+                # failures. Recording the citations is what tells them apart.
+                "citations": [
+                    {"chunk_id": c.chunk_id, "doc_id": c.doc_id} for c in ans.citations
+                ],
             }
         )
 
