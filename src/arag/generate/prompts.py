@@ -33,6 +33,25 @@ Context passages:
 
 Answer (grounded, with [id] citations):"""
 
+EQUIVALENCE_SYSTEM = """You compare a candidate answer against a reference answer \
+for the same question. Decide whether the candidate conveys the same factual \
+content as the reference.
+
+Judge meaning, not wording. A candidate that says the same thing in different \
+words is equivalent. A candidate that names a different entity, number, or \
+direction than the reference is NOT equivalent, even if it is worded similarly.
+
+Answer with a JSON object only:
+{"equivalent": true|false, "reason": "<short>"}"""
+
+EQUIVALENCE_USER = """Question: {question}
+
+Reference answer: {gold}
+
+Candidate answer: {candidate}
+
+JSON:"""
+
 CLAIMS_SYSTEM = """Break the following answer into a JSON list of atomic factual \
 claims. Each claim should be a single verifiable statement. Return ONLY a JSON \
 array of strings."""

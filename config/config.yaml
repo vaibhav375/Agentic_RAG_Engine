@@ -262,6 +262,20 @@ eval:
   # LLM-as-judge that drives the online loop, so we don't grade the loop with its
   # own grader. Set "llm" or "both" to compare.
   faithfulness_method: nli
+  # Semantic answer grading beside token-F1, never instead of it — token-F1 is
+  # the historical series every past number sits on. Uses `llm.judge_model` when
+  # set, else the generation model; mock falls back to a lexical stand-in that
+  # inherits token-F1's flaw and is only a placeholder.
+  #
+  # Validated on 9 hand-verified labels (eval/experiments/judge_validation.py):
+  #   token-F1     ranks them close to backwards (wrong answer scores highest)
+  #   qwen2.5:3b   7/9 — never accepts a wrong answer, misses 2 correct ones
+  #   qwen2.5:7b   9/9
+  # Size matters for this task even though it did not for claim-support flagging,
+  # so pointing llm.judge_model at a larger model than the generator is worthwhile.
+  # Costs one judge call per answered gold question.
+  answer_equivalence: true
+
   # How an answer is split into claims for the NLI metric. `clause` strips
   # framing conditionals ("If X, Y" -> assert Y) and splits trailing so/because
   # clauses; entailment models score compound conditionals far worse than the

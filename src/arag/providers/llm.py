@@ -306,6 +306,26 @@ class PromptLLM(LanguageModel):
             pass
         return split_sentences(answer)
 
+    def judge_equivalence(self, question: str, gold: str, candidate: str) -> bool:
+        """Semantic answer comparison — the job token-F1 measurably cannot do.
+
+        Validated against 9 hand-verified labels: this model at 3B scores 7/9 and
+        at 7B scores 9/9, neither ever accepting a wrong answer. token-F1 ranks
+        the same 9 close to backwards. Set `llm.judge_model` to run the judge on a
+        larger model than the generator, which is what the 7B result argues for.
+
+        An unparseable reply is treated as "not equivalent": this feeds a quality
+        metric, so a failure should read as a miss rather than silently inflate it.
+        """
+        user = prompts.EQUIVALENCE_USER.format(
+            question=question, gold=gold or "", candidate=candidate or ""
+        )
+        raw = self._complete(prompts.EQUIVALENCE_SYSTEM, user)
+        try:
+            return bool(json.loads(raw[raw.index("{"):raw.rindex("}") + 1])["equivalent"])
+        except Exception:
+            return False
+
     def judge_claim(self, claim: str, context: str) -> tuple[bool, str, float]:
         user = prompts.JUDGE_USER.format(context=context, claim=claim)
         raw = self._complete(prompts.JUDGE_SYSTEM, user)
