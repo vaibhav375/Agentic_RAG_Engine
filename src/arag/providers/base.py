@@ -242,6 +242,34 @@ class LanguageModel(ABC):
     def judge_claim(self, claim: str, context: str) -> tuple[bool, str, float]:
         """Return (supported, reason, confidence)."""
 
+    def judge_equivalence(self, question: str, gold: str, candidate: str) -> bool:
+        """Does the candidate answer convey the same facts as the gold answer?
+
+        Not abstract, and deliberately so: `answer_correctness` (token-F1) stays
+        the primary reported number, and a backend that cannot do semantic
+        comparison must keep working rather than crash the harness.
+
+        The default is a lexical stand-in and inherits token-F1's flaw — it
+        rewards shared wording and is blind to the token that decides the answer.
+        That is acceptable only because mock is a deterministic stand-in, never a
+        measurement of quality. Real backends override this.
+
+        Measured on 9 hand-verified labels: token-F1 ranks them close to
+        backwards, a qwen2.5:3b judge gets 7/9 (never accepting a wrong answer),
+        and qwen2.5:7b gets 9/9. See eval/experiments/judge_validation.py.
+
+        (Token overlap is recomputed here rather than imported from eval.metrics:
+        a provider reaching into the eval layer would invert the dependency.)
+        """
+        pred, ref = content_tokens(candidate), content_tokens(gold)
+        if not pred or not ref:
+            return not pred and not ref
+        overlap = len(pred & ref)
+        if not overlap:
+            return False
+        precision, recall = overlap / len(pred), overlap / len(ref)
+        return (2 * precision * recall) / (precision + recall) >= 0.6
+
     @abstractmethod
     def reformulate(self, query: str, missing_info: str | None, prior: list[str]) -> str:
         ...
