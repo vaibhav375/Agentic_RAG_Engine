@@ -110,6 +110,38 @@ class MockLLM(LanguageModel):
 # --------------------------------------------------------------------------- #
 # Real
 # --------------------------------------------------------------------------- #
+def _context_block(contexts: list[tuple[str, str]]) -> str:
+    """Render passages so the boundary between them is unambiguous.
+
+    The prompt asks the model to copy each passage's id "exactly as it appears in
+    brackets at the start of that passage", which only works if the model can see
+    where a passage starts. Passages used to be joined with a single newline,
+    which was fine while every chunk was one paragraph.
+
+    Once the chunker began packing several blocks into a chunk, chunk text carried
+    its own blank lines — so the separation *inside* a passage was stronger than
+    the separation *between* passages. Internal blank lines are therefore
+    collapsed for the prompt only (stored chunk text keeps its paragraphs for
+    display and citation quoting), and passages are separated by the blank line
+    that is now unique to a boundary.
+
+    Worth being straight about what this fixed: it was written to explain why
+    packed chunks lost citations on six gold questions, and it recovered exactly
+    one of them. The dominant cause is elsewhere — with packed (longer) context
+    the 3B model writes a longer answer and silently drops the citation
+    instruction. In that run the two answers that cited averaged 12 words and the
+    four that did not averaged 46. This is the same instruction-crowding failure
+    already recorded in docs/local-mode-eval.md, arriving via context length
+    rather than via a longer prompt. Unambiguous boundaries are still correct;
+    they are just not the cure.
+    """
+    out = []
+    for cid, text in contexts:
+        body = re.sub(r"\n\s*\n+", "\n", (text or "").strip())
+        out.append(f"[{cid}] {body}")
+    return "\n\n".join(out)
+
+
 def parse_citations(raw: str, known_ids: list[str]) -> GeneratedAnswer:
     """Pull `[chunk_id]` citations out of a model answer and strip those markers.
 
@@ -256,7 +288,7 @@ class PromptLLM(LanguageModel):
 
     # -- tasks -------------------------------------------------------------- #
     def generate_answer(self, query: str, contexts: list[tuple[str, str]]) -> GeneratedAnswer:
-        block = "\n".join(f"[{cid}] {text}" for cid, text in contexts)
+        block = _context_block(contexts)
         system = prompts.ANSWER_SYSTEM.format(abstain=prompts.ABSTAIN_PHRASE)
         user = prompts.ANSWER_USER.format(question=query, context_block=block)
         raw = self._complete(system, user).strip()
