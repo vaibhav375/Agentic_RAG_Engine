@@ -1192,3 +1192,44 @@ backend rather than only after a real failure.
 Deliberately left un-run: `pack_blocks` on the scaled corpus (where the effect
 should be largest), the reformulation recall@1 drop (0.867 → 0.800), and any
 intermediate CRAG threshold between 0.25 and 0.51.
+
+
+## Can an LLM critic rescue the answers NLI wrongly refuses? Yes — and it costs too much
+
+Nine of the 14 over-abstentions are the critic refusing answers whose context was
+correct, and NLI is weak exactly where they fail: negation and paraphrase. So the
+critic signal was swapped, one variable, 44 questions (9 critic-exhausted, 5
+CRAG-declined, 30 refusal cases), both arms entirely on qwen2.5:3b:
+
+| critic | recovered | of those semantically correct | hallucination | correct_abst | adversarial | over_abst | wall |
+|---|---|---|---|---|---|---|---|
+| nli | 4/9 | 3 | **0.000** | 1.000 | **0.9444** | 0.7143 | 29.9 min |
+| llm | **8/9** | **6** | 0.1364 | 1.000 | 0.8333 | **0.4286** | 22.1 min |
+
+The hypothesis was right: an LLM judge accepts the correct answers NLI refuses,
+recovering 8 of 9 with 6 of them genuinely correct. It is also *faster* (22.1 vs
+29.9 min) because accepting sooner means fewer retries.
+
+It is still rejected. The trade is **+3 correct answers for +6 hallucinated
+records**, plus adversarial robustness 0.9444 -> 0.8333 and the first refusal-case
+hallucinations (0 -> 2). On a project whose headline claim is hallucination
+reduction that is a losing trade, so `agent.critic: nli` stays.
+
+Both arms ran entirely on one model on purpose. Setting `llm.judge_model` to 7b
+while generating on 3b would leave two models resident and make Ollama swap per
+call — the thrashing that once produced a phantom "7b costs 11x more" conclusion.
+If a stronger judge is worth testing, the run must be all-7b, never mixed.
+
+**Untested middle:** escalate to the LLM judge only when NLI says unsupported
+*and* CRAG graded retrieval "correct" — restricting the permissive path to cases
+where retrieval is known good, which is the shape of all nine. The catch is
+visible in advance: the hardened adversarial slice deliberately retrieves relevant
+context, so CRAG grades it "correct" too and it would not be protected by that
+gate. Unanswerable questions would be.
+
+### A side effect: the new metric disagreeing with the old one, in aggregate
+
+On the nli arm the same answers score `answer_correctness` 0.1295 and
+`answer_equivalence` 0.750. The token-F1 series was not just noisy on individual
+questions — it understates aggregate quality about six-fold on this subset, which
+is why both are now reported side by side.
