@@ -86,6 +86,7 @@ def run_self_correction(comp, query: str, trace: Trace | None = None, max_iter: 
 
     ans.iterations = iterations
     ans.critique = critique
+    ans.reformulations = prior_queries[1:]  # the original query is not a reformulation
 
     if not critique.supported:
         ans.answer = abstain_message
