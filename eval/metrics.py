@@ -253,16 +253,12 @@ def evaluate_record(comp, gold: GoldQA, ans: Answer) -> dict:
         metrics["context_recall"] = cr
         metrics["answer_relevance"] = answer_relevance(comp.embedder, gold.question, ans.answer)
         metrics["answer_correctness"] = round(token_f1(ans.answer, gold.answer or ""), 4)
-        # Semantic equivalence beside the token-overlap score, never instead of
-        # it: token-F1 stays the historical series every past number is on, and
-        # replacing it would silently invalidate every comparison in the docs.
-        # On 9 hand-verified labels token-F1 ranks them close to backwards while
-        # a 7B judge agrees 9/9 — so read this column when they disagree.
-        if bool(cfg.get("eval.answer_equivalence", True)) and not ans.abstained:
-            judge = comp.judge or comp.llm
-            metrics["answer_equivalence"] = float(
-                judge.judge_equivalence(gold.question, gold.answer or "", ans.answer)
-            )
+        # `answer_equivalence` is deliberately NOT computed here. The judge that
+        # scored 9/9 on the hand-verified labels is larger than the generator, and
+        # loading both in one process makes Ollama swap models per record — the
+        # thrashing that once produced a phantom "7b costs 11x more" result and
+        # corrupts every timing in the run. It is added afterwards by
+        # `python -m eval.regrade`, which is its only implementation.
         metrics["citation_precision"] = _citation_precision(ans, gold.supporting_doc_ids)
         metrics["hallucination"] = float(fabricated)
         # The old any-unsupported-claim rule, reported alongside so the

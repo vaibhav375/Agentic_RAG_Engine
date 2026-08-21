@@ -42,30 +42,23 @@ from arag.providers.llm import make_llm  # noqa: E402
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5:3b"
 OUT = Path(f"eval/results/judge_validation_{MODEL.replace(':','_')}.json")
 
-EQUIVALENCE_SYSTEM = """You compare a candidate answer against a reference answer \
-for the same question. Decide whether the candidate conveys the same factual \
-content as the reference.
-
-Judge meaning, not wording. A candidate that says the same thing in different \
-words is equivalent. A candidate that names a different entity, number, or \
-direction than the reference is NOT equivalent, even if it is worded similarly.
-
-Answer with a JSON object only:
-{"equivalent": true|false, "reason": "<short>"}"""
-
-EQUIVALENCE_USER = """Question: {question}
-
-Reference answer: {gold}
-
-Candidate answer: {candidate}
-
-JSON:"""
+# The shipped prompt, imported rather than copied: a second copy of it would
+# drift from the one actually used, and then this validation would be measuring
+# something the pipeline does not run.
+from arag.generate.prompts import EQUIVALENCE_SYSTEM, EQUIVALENCE_USER  # noqa: E402
 
 # Hand-verified labels. The six correct ones were recovered from the pipeline's
 # own discarded answers and checked against gold one by one; the three wrong ones
 # are documented failures.
 LABELS = {
+    # Correct answers, hand-checked against gold one by one.
     "e26": True, "e39": True, "m04": True, "e50": True, "e70": True, "m10": True,
+    # Correct-but-elaborated. Added after the first prompt rejected all three:
+    # each contains the gold answer verbatim and then adds accurate detail, and a
+    # judge that penalises elaboration understates quality across the whole set.
+    # The original 9 labels were mostly terse, which is why they missed this.
+    "e10": True, "e18": True, "e22": True,
+    # Wrong answers. m06 is the case token-F1 scored highest of all.
     "m06": False,   # names CORSMiddleware where gold says GZipMiddleware
     "e14": False,   # inverts use_cache=False
     "e57": False,   # unsupported claim about a generic 500 response
@@ -75,7 +68,8 @@ LABELS = {
 def _answers() -> dict[str, dict]:
     """Predicted answers for the labelled ids, from the runs that produced them."""
     out: dict[str, dict] = {}
-    for path in ("eval/results/oa_no_post_abstain.json", "eval/results/full_local_hard.json"):
+    for path in ("eval/results/oa_no_post_abstain.json", "eval/results/crag_t051_shipped.json",
+                 "eval/results/full_local_hard.json"):
         for r in json.loads(Path(path).read_text())["detail"]:
             if r["id"] in LABELS and r["id"] not in out and (r["predicted"] or "").strip():
                 out[r["id"]] = r
