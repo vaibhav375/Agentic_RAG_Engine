@@ -80,6 +80,11 @@ class Answer(BaseModel):
     retrieved: list[RetrievedChunk] = Field(default_factory=list)
     abstained: bool = False
     iterations: int = 1
+    # The broadened queries the self-correction loop actually retrieved on. Kept
+    # because the retries change which passages reach the generator, and without
+    # them a retrieval regression across iterations cannot be attributed to the
+    # reformulation that caused it.
+    reformulations: list[str] = Field(default_factory=list)
     from_cache: bool = False
     route: str = "full"                 # full | direct (router decision)
     retrieval_grade: str | None = None  # CRAG: correct | ambiguous | incorrect

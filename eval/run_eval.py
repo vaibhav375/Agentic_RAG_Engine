@@ -145,6 +145,7 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
                 "abstained": ans.abstained,
                 "route": ans.route,
                 "iterations": ans.iterations,
+                "reformulations": list(ans.reformulations),
                 # The two signals that decide an abstention, so a bad abstention
                 # can be diagnosed from a saved run instead of re-run to find out
                 # which gate fired: CRAG "incorrect" declines before generating,
