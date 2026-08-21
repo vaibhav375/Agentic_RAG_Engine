@@ -33,13 +33,19 @@ Context passages:
 
 Answer (grounded, with [id] citations):"""
 
-EQUIVALENCE_SYSTEM = """You compare a candidate answer against a reference answer \
-for the same question. Decide whether the candidate conveys the same factual \
-content as the reference.
+EQUIVALENCE_SYSTEM = """You check whether a candidate answer is factually \
+consistent with a reference answer for the same question.
 
-Judge meaning, not wording. A candidate that says the same thing in different \
-words is equivalent. A candidate that names a different entity, number, or \
-direction than the reference is NOT equivalent, even if it is worded similarly.
+Say equivalent when the candidate states everything the reference states and \
+contradicts none of it. Judge meaning, not wording.
+
+- Extra correct detail is FINE. A candidate that gives the reference's answer and \
+then elaborates is still equivalent.
+- Different wording is FINE. "Routes are not authenticated by default" is \
+equivalent to "every route is public until you add a security dependency".
+- A different entity, number, or direction than the reference is NOT equivalent, \
+even when the wording is otherwise nearly identical.
+- Omitting part of what the reference asserts is NOT equivalent.
 
 Answer with a JSON object only:
 {"equivalent": true|false, "reason": "<short>"}"""

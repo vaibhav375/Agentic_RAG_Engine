@@ -262,19 +262,14 @@ eval:
   # LLM-as-judge that drives the online loop, so we don't grade the loop with its
   # own grader. Set "llm" or "both" to compare.
   faithfulness_method: nli
-  # Semantic answer grading beside token-F1, never instead of it — token-F1 is
-  # the historical series every past number sits on. Uses `llm.judge_model` when
-  # set, else the generation model; mock falls back to a lexical stand-in that
-  # inherits token-F1's flaw and is only a placeholder.
-  #
-  # Validated on 9 hand-verified labels (eval/experiments/judge_validation.py):
-  #   token-F1     ranks them close to backwards (wrong answer scores highest)
-  #   qwen2.5:3b   7/9 — never accepts a wrong answer, misses 2 correct ones
-  #   qwen2.5:7b   9/9
-  # Size matters for this task even though it did not for claim-support flagging,
-  # so pointing llm.judge_model at a larger model than the generator is worthwhile.
-  # Costs one judge call per answered gold question.
-  answer_equivalence: true
+  # Semantic answer grading lives in `make regrade`, not here — see eval/regrade.py.
+  # It needs a judge LARGER than the generator (qwen2.5:3b scores 7/9 on the
+  # hand-verified labels, qwen2.5:7b scores 9/9), and loading both models in one
+  # process makes Ollama swap per record. So it runs as a pass over a finished
+  # results file, once generation has released its model:
+  #     make eval && make regrade JUDGE=qwen2.5:7b
+  # token-F1 (`answer_correctness`) is still computed inline and still reported —
+  # it is the series every earlier number in the docs sits on.
 
   # How an answer is split into claims for the NLI metric. `clause` strips
   # framing conditionals ("If X, Y" -> assert Y) and splits trailing so/because

@@ -38,6 +38,10 @@ eval: ## Run the eval harness over the gold set (reports dev vs held-out)
 ablation: ## Run the full ablation matrix and write RESULTS.md
 	$(PY) -m eval.ablation $(CONFIG)
 
+regrade: ## Re-grade a finished eval semantically (JUDGE=<model>, TAG=<tag>)
+	$(PY) -m eval.regrade eval/results/$(or $(TAG),current).json --config $(CONFIG) \
+		$(if $(JUDGE),--judge $(JUDGE),)
+
 calibrate: ## Validate the critic/judge against the human-labeled set
 	$(PY) -m eval.calibrate_judge $(CONFIG)
 
