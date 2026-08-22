@@ -62,6 +62,7 @@ export function AskBar({
     <section>
       <div className="flex gap-2">
         <input
+          id="ask-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !busy && onAsk()}

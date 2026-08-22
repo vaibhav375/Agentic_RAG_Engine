@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AskBar } from "@/components/AskBar";
+import { Corpus } from "@/components/Corpus";
 import { Evidence } from "@/components/Evidence";
 import { Ruling } from "@/components/Ruling";
 import { VerdictRail } from "@/components/VerdictRail";
@@ -127,6 +128,12 @@ export default function Page() {
             flags={flags}
             onFlags={setFlags}
           />
+
+          {/* Ask the benchmark question verbatim. An earlier version wrapped the
+              topic in "What does the documentation say about X?", which the gate
+              declined every time — "documentation" and "say" are rare words absent
+              from the corpus, so they drag lexical coverage down. */}
+          <Corpus onPick={(question) => ask(question)} />
 
           {error && (
             <p className="mt-5 rounded-sm border border-contra bg-card p-3 font-mono text-[12px] text-contra">
