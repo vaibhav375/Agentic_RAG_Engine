@@ -31,13 +31,23 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > narrow enough to mean something.
 >
 > **And on real open-weight models** (`qwen2.5:3b` + `bge-small`, **117**
-> questions, no API keys, 46 min): hallucination **1.7%** (95% CI [0%, 4.3%]),
-> **correct abstention 100%** — all 12 out-of-scope questions declined —
-> **adversarial robustness 100%** on a slice deliberately hardened with subtle
-> false premises (16 abstained, 2 refuted the premise outright), faithfulness
-> **0.935**, recall@1 **0.948**. Only 2 of 117 records flagged, each a single
-> unsupported clause rather than fabrication, and `contradicted_claim_rate` is
-> **0.000** across the whole set.
+> questions, no API keys): hallucination **0.85%** (95% CI [0%, 2.6%]) — **1 of
+> 117 records flagged** — **correct abstention 100%** (12/12 out-of-scope
+> questions declined), **adversarial robustness 100%** (18/18 on a slice
+> deliberately hardened with subtle false premises, scored refutation-aware),
+> faithfulness **0.928**, recall@1 **0.960**, MRR **0.994**, and
+> `contradicted_claim_rate` **0.004**.
+>
+> Answer quality is reported two ways, because token-F1 measurably inverts on
+> this data: **token-F1 0.365** against **semantic equivalence 0.773** (LLM judge,
+> 75 answered questions). The judge is calibrated against hand labels at
+> Cohen's κ 0.80, precision 1.000 — it never accepts an answer a human called
+> wrong. Details in [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
+>
+> Latency is deliberately **not** quoted here. Every timing measured on the 8 GB
+> development machine is suspect — a full run drove it 12 GB into swap, and three
+> separate "findings" turned out to be paging rather than pipeline behaviour.
+> Quality metrics survive that contamination; timings do not.
 >
 > **Out-of-sample check.** Every threshold and prompt was tuned against this gold
 > set, so `eval.split` holds out a stratified quarter that nothing was tuned on.
@@ -97,7 +107,7 @@ Flip `config.mode` to `local` (sentence-transformers + Ollama) or `api`
 
 ```bash
 make install     # core deps only; mock mode works immediately
-make test        # 19 unit + integration tests, no network
+make test        # 182 unit + integration tests, no network
 make demo        # ingest the corpus + answer one query
 make ablation    # full ablation study -> RESULTS.md
 ```
