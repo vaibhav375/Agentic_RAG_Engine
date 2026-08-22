@@ -10,21 +10,28 @@
 > two abstention gates were isolated and diagnosed. The numbers in this box are
 > from *before* those changes; the deltas are in the last section.
 >
-> **Definitive local run:** full **117-question** gold set (adversarial slice
-> hardened from 10 to 18), `qwen2.5:3b`, `bge-small`, `critic: nli`, clause claim
-> extraction, hybrid + rerank(replace) + self-correction + CRAG. 46 min.
+> **Definitive local run** (`crag_t051_shipped`): full **117-question** gold set,
+> `qwen2.5:3b`, `bge-small`, `critic: nli`, clause claim extraction, packed
+> chunker, hybrid + rerank(replace) + self-correction + CRAG at 0.51.
 >
 > | Metric | Value |
 > |---|---|
-> | hallucination_rate | **0.017** (95% CI [0.000, 0.043]) |
+> | hallucination_rate | **0.0085** (95% CI [0.000, 0.0256]) — 1 of 117 |
 > | **correct abstention** | **1.000** — 12/12 declined |
 > | **adversarial robustness** | **1.000** — 18/18, refutation-aware |
-> | faithfulness | **0.935** |
-> | citation_precision | 0.799 |
-> | answer_correctness | 0.352 — token-F1; **inverted on a hand-check**, treat as a rough signal only (see "The correctness metric ranks a wrong answer above a right one") |
-> | over_abstention | 0.161 — **diagnosed**: 5 CRAG gate, 9 critic; 6 of 7 recovered answers were correct |
-> | recall@1 / MRR | 0.948 / 0.989 |
-> | p50 latency | 13.6 s |
+> | faithfulness | **0.9275** |
+> | contradicted_claim_rate | 0.0043 |
+> | recall@1 / recall@3 / MRR | **0.9598** / 0.9943 / **0.9943** |
+> | citation_precision | 0.7414 |
+> | answer_correctness (token-F1) | 0.3652 — inverts on a hand-check, rough signal only |
+> | **answer_equivalence** | **0.7733** over 75 answered (judge `qwen2.5:7b`, κ 0.80) |
+> | over_abstention | 0.1379 — diagnosed: 5 CRAG gate, 9 critic |
+> | p50 latency | **not quoted** — every timing from this 8 GB machine is suspect |
+>
+> This supersedes the earlier `full_local_hard` headline (hallucination 0.017,
+> recall@1 0.948). The packed chunker halved hallucination and improved ranking;
+> the CRAG threshold was moved to 0.25 and reverted after the holdout showed the
+> gain was dev-only. Full history below.
 >
 > **2 of 117 records flagged**, both on easy questions — and both are genuine
 > model errors, detailed below.
