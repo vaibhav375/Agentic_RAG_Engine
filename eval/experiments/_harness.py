@@ -24,6 +24,7 @@ run alone.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,69 @@ def _freeze(config: str) -> str:
     return _FROZEN[config]
 
 
+def memory_snapshot() -> dict:
+    """Best-effort view of whether this machine can actually hold the workload.
+
+    A timing taken while the process is paged out looks exactly like a real
+    result, which is how several measurements on this project were quietly
+    corrupted. One local eval holds bge-small (~130 MB), bge-reranker-base
+    (~1.1 GB) and deberta-v3-base (~700 MB) plus the index — roughly 2.5-3 GB —
+    while Ollama holds another ~3.1 GB for a 3B model. On the 8 GB machine this
+    was developed on that is ~6 GB before the OS, and a full 117-question run
+    drove swap to 12.25 GB of 13.3 GB with the eval process holding 2 MB resident
+    and burning 10% CPU. It was not hung; it was thrashing.
+
+    Returns {} when the platform is not recognised — a missing reading must not
+    stop a run, only an informed one.
+    """
+    import subprocess
+
+    out: dict = {}
+    try:
+        if sys.platform == "darwin":
+            total = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
+                                       capture_output=True, text=True).stdout.strip())
+            out["total_gb"] = round(total / 1024**3, 1)
+            vm = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+            m = re.search(r"Pages free:\s+(\d+)", vm)
+            if m:
+                out["free_gb"] = round(int(m.group(1)) * 4096 / 1024**3, 2)
+            swap = subprocess.run(["sysctl", "-n", "vm.swapusage"],
+                                  capture_output=True, text=True).stdout
+            m = re.search(r"used\s*=\s*([\d.]+)M", swap)
+            if m:
+                out["swap_used_gb"] = round(float(m.group(1)) / 1024, 2)
+        elif sys.platform.startswith("linux"):
+            info = {}
+            for line in open("/proc/meminfo"):
+                k, _, v = line.partition(":")
+                info[k] = int(v.split()[0])
+            out["total_gb"] = round(info["MemTotal"] / 1024**2, 1)
+            out["free_gb"] = round(info.get("MemAvailable", info["MemFree"]) / 1024**2, 2)
+            out["swap_used_gb"] = round(
+                (info.get("SwapTotal", 0) - info.get("SwapFree", 0)) / 1024**2, 2
+            )
+    except Exception:
+        return {}
+    return out
+
+
+def _warn_if_starved(mem: dict, tag: str) -> None:
+    """Say so before the arm runs, not after its numbers are already written."""
+    if not mem:
+        return
+    swap = mem.get("swap_used_gb", 0.0)
+    free = mem.get("free_gb", 99.0)
+    if swap >= 4.0 or free <= 0.5:
+        print(
+            f"[harness] WARNING before arm {tag}: machine looks memory-starved "
+            f"(total {mem.get('total_gb', '?')} GB, free {free} GB, swap used "
+            f"{swap} GB). Timings from this arm will measure paging, not the "
+            f"pipeline. Quality metrics survive; latency does not.",
+            file=sys.stderr, flush=True,
+        )
+
+
 def run_arm(
     overrides: dict,
     tag: str,
@@ -72,6 +136,8 @@ def run_arm(
     Raises `subprocess.CalledProcessError` if the child fails, so a crashed arm
     is never silently recorded as a result.
     """
+    mem = memory_snapshot()
+    _warn_if_starved(mem, tag)
     proc = subprocess.run(
         [sys.executable, "-m", "eval.experiments._harness",
          _freeze(config), tag, json.dumps(overrides)],

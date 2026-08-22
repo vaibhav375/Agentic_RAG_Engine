@@ -96,3 +96,40 @@ def test_a_failed_arm_raises_instead_of_recording_a_result(tmp_path):
             tag="t_boom",
             results_dir=str(tmp_path),
         )
+
+
+def test_a_starved_machine_is_flagged_before_the_arm_runs(capsys):
+    """A timing taken while paged out looks exactly like a real result.
+
+    A full local run drove an 8 GB machine to 12.25 GB of swap with the eval
+    process holding 2 MB resident at 10% CPU. It was not hung, and nothing in the
+    output said so — which is how several measurements were quietly corrupted.
+    """
+    from eval.experiments._harness import _warn_if_starved
+
+    _warn_if_starved({"total_gb": 8.0, "free_gb": 0.02, "swap_used_gb": 12.25}, "t")
+    err = capsys.readouterr().err
+    assert "memory-starved" in err
+    assert "Quality metrics survive; latency does not" in err
+
+
+def test_a_healthy_machine_is_not_flagged(capsys):
+    from eval.experiments._harness import _warn_if_starved
+
+    _warn_if_starved({"total_gb": 64.0, "free_gb": 40.0, "swap_used_gb": 0.0}, "t")
+    assert capsys.readouterr().err == ""
+
+
+def test_an_unreadable_platform_does_not_block_a_run(capsys):
+    """A missing reading must produce an uninformed run, never no run."""
+    from eval.experiments._harness import _warn_if_starved
+
+    _warn_if_starved({}, "t")
+    assert capsys.readouterr().err == ""
+
+
+def test_memory_snapshot_is_shaped_or_empty():
+    from eval.experiments._harness import memory_snapshot
+
+    snap = memory_snapshot()
+    assert snap == {} or snap["total_gb"] > 0

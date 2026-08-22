@@ -1233,3 +1233,50 @@ On the nli arm the same answers score `answer_correctness` 0.1295 and
 `answer_equivalence` 0.750. The token-F1 series was not just noisy on individual
 questions — it understates aggregate quality about six-fold on this subset, which
 is why both are now reported side by side.
+
+
+## The machine was the bottleneck all along
+
+A batched re-run of the 0.45 arm looked hung after 68 minutes on the 40 *easy*
+questions — the fastest slice, where comparable arms finished in 28-30 minutes.
+It was not hung:
+
+| | |
+|---|---|
+| installed RAM | **8.0 GB** |
+| swap used | **12.25 GB of 13.3 GB** |
+| free RAM | 0.0 GB |
+| eval process resident | **2.2 MB** (of the ~2-3 GB it needs) |
+| eval process CPU | 6m46s over 68 min — ~10% duty cycle |
+| Ollama runner CPU | **14 seconds total** |
+
+The process had been paged almost entirely to disk. Every step faulted from swap,
+and Ollama — which would be the busiest thing on the machine if generation were
+happening — was idle.
+
+The arithmetic never fitted the box. One local eval holds bge-small (~130 MB),
+bge-reranker-base (~1.1 GB) and deberta-v3-base (~700 MB) plus the index and
+Python, roughly 2.5-3 GB, while Ollama holds ~3.1 GB for a 3B model with
+`--parallel 2` doubling the KV cache. That is ~6 GB of an 8 GB machine before the
+OS gets any.
+
+**This casts doubt on latency numbers throughout this document.** The clearest
+casualty is the packed-chunk result: packed measured 105.6 min against unpacked's
+19.1 at identical iteration counts, and it was attributed to context length
+(~5x more words, a clean mechanistic fit). On a machine this deep into swap,
+larger contexts also mean more paging, so part of that 5.5x is thrashing
+amplification. The direction stands; the magnitude should not have been stated as
+cleanly as it was.
+
+It also explains, retroactively, the MPS out-of-memory that killed an arm earlier
+(9 GB "max allowed" on an 8 GB machine, shared with Ollama), and the run that was
+killed as hung before that.
+
+`run_arm` now takes a memory snapshot before each arm and warns when the machine
+is starved, because a timing taken while paged out is indistinguishable from a
+real one. Quality metrics survive contamination; timings do not — the same rule
+that produced the one-process-per-arm harness.
+
+**Practical consequence:** full 117-question local runs are not viable on this
+hardware. Stratified 40-question subsets finished in ~30 minutes and are the
+sensible unit; mock stays the default for CI and iteration.
