@@ -57,7 +57,10 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > 0.826 → 0.738, recall@1 0.962 → 0.905). Quote the headline with that column
 > beside it.
 >
-> Full analysis in [`docs/local-mode-eval.md`](docs/local-mode-eval.md).
+> Full analysis in [`docs/local-mode-eval.md`](docs/local-mode-eval.md). Every
+> question the pipeline is measured on — with the answer it should give, or the
+> reason it should refuse — is in
+> [`docs/question-bank.md`](docs/question-bank.md).
 
 ## Why this is more than "a chatbot"
 

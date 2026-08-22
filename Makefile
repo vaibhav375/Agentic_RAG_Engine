@@ -42,6 +42,9 @@ regrade: ## Re-grade a finished eval semantically (JUDGE=<model>, TAG=<tag>)
 	$(PY) -m eval.regrade eval/results/$(or $(TAG),current).json --config $(CONFIG) \
 		$(if $(JUDGE),--judge $(JUDGE),)
 
+question-bank: ## Regenerate docs/question-bank.md from the gold set
+	$(PY) -m eval.make_question_bank
+
 calibrate: ## Validate the critic/judge against the human-labeled set
 	$(PY) -m eval.calibrate_judge $(CONFIG)
 
