@@ -18,6 +18,7 @@ from arag.common.config import load_config
 from arag.engine import answer_query, build_components
 from arag.ingest.index import build_index
 from eval.build_gold_set import load_gold
+from eval.machine import memory_snapshot
 from eval.metrics import aggregate, evaluate_record
 
 
@@ -121,6 +122,7 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
         store = build_index(cfg) if rebuild else None
         comp = build_components(cfg, store=store)
 
+    machine_before = memory_snapshot()
     records = []
     detail = []
     # A local run is one to three hours of silence otherwise, which is
@@ -183,7 +185,17 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
     if comp.cache is not None:
         summary["cache_stats"] = comp.cache.stats()
 
-    out = {"tag": tag, "config_flags": _flags(cfg), "summary": summary, "detail": detail}
+    # Record what the machine could give this run. A timing measured while the
+    # process was paged out is indistinguishable from a real one, and a reader
+    # months later has no other way to know: an 8 GB machine 12 GB into swap
+    # produced a run that looked hung at 10% CPU while Ollama sat idle.
+    out = {
+        "tag": tag,
+        "config_flags": _flags(cfg),
+        "machine": machine_before,
+        "summary": summary,
+        "detail": detail,
+    }
 
     results_dir = Path(cfg.get("eval.results_dir", "eval/results"))
     results_dir.mkdir(parents=True, exist_ok=True)
