@@ -1280,3 +1280,43 @@ that produced the one-process-per-arm harness.
 **Practical consequence:** full 117-question local runs are not viable on this
 hardware. Stratified 40-question subsets finished in ~30 minutes and are the
 sensible unit; mock stays the default for CI and iteration.
+
+
+## Reformulated retries do not cost retrieval quality (n=8 questions)
+
+`recall_at_1` fell 0.867 -> 0.800 as retries went up, which suggested the retry
+loop was harming what it exists to help: an unsupported answer triggers a
+broadened query whose contexts replace the originals wholesale, so if the
+broadened query retrieves worse the loop trades a good context set for a worse one
+and then abstains for lack of grounding.
+
+Replaying retrieval for the original question and for each recorded reformulation
+(retrieval only — no LLM, which is also why this fits an 8 GB machine):
+
+| | |
+|---|---|
+| reformulations replayed | 25 |
+| **informative** | **13, across 8 questions** |
+| inert: no gold doc (unanswerable) | 6 |
+| inert: gold doc never retrieved either way | 6 |
+| recall@1 worse / better / unchanged | 1 / 1 / 11 |
+| mean recall@1 | 0.8846 -> 0.8846 (+0.0000) |
+
+Refuted: reformulation is retrieval-neutral here. The 0.867 -> 0.800 difference
+was 2-3 questions at n=40 — noise given a plausible-sounding mechanism attached to
+it after the fact.
+
+This corroborates a finding reached independently: 13 of 14 over-abstentions had
+recall_at_3 = 1.0. Retrieval is not what fails; the critic is.
+
+**The first version of this result said "25 scored, 23 unchanged."** Twelve of
+those rows could not have moved — an unanswerable question has no gold doc to
+retrieve, and a question whose gold doc is never retrieved scores 0.00 either way.
+Counting both as "unchanged" doubled the apparent sample. The direction survives;
+the strength did not, and at 8 questions this is suggestive rather than settled.
+
+That is the third result this session that looked clean until the denominator was
+examined — after the phantom 4x latency regression and a judge score of 0.1867
+produced by a judge that was never called. In each case the aggregate looked
+reasonable and the composition was wrong. Sample composition belongs in the
+reported output by default, not in whatever gets checked when someone asks.
