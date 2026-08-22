@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 import time
 from pathlib import Path
 
@@ -122,10 +123,23 @@ def run_eval(cfg, tag: str = "current", rebuild: bool = True, comp=None) -> dict
 
     records = []
     detail = []
-    for g in gold:
+    # A local run is one to three hours of silence otherwise, which is
+    # indistinguishable from a hang — a run was killed as hung for exactly this
+    # reason. Progress goes to stderr so it never lands in piped JSON output.
+    progress_every = int(cfg.get("eval.progress_every", 5) or 0)
+    started = time.perf_counter()
+    for i, g in enumerate(gold, 1):
         t0 = time.perf_counter()
         ans = answer_query(comp, g.question)
         latency_ms = (time.perf_counter() - t0) * 1000.0
+        if progress_every and (i % progress_every == 0 or i == len(gold)):
+            elapsed = time.perf_counter() - started
+            eta = elapsed / i * (len(gold) - i)
+            print(
+                f"  [{tag}] {i}/{len(gold)} questions · {elapsed / 60:.1f} min elapsed"
+                f" · ~{eta / 60:.1f} min left · last {latency_ms / 1000:.1f}s",
+                file=sys.stderr, flush=True,
+            )
         m = evaluate_record(comp, g, ans)
         rec = {
             "id": g.id,
