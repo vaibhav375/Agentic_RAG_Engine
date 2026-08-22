@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Agentic RAG — Playground",
-  description: "Self-correcting agentic RAG engine: interactive playground",
+  title: "Self-correcting RAG",
+  description: "Watch a RAG engine decide whether it is allowed to answer.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        {children}
       </body>
     </html>
   );

@@ -66,6 +66,9 @@ class QueryResponse(BaseModel):
     cost_usd: float = 0.0
     tokens: dict = {}
     support_fraction: float | None = None
+    # The broadened queries the self-correction loop actually retrieved on. The
+    # most legible evidence that the loop did something, and the UI shows them.
+    reformulations: list[str] = []
 
 
 def _answer_to_response(ans: Answer) -> QueryResponse:
@@ -96,6 +99,7 @@ def _answer_to_response(ans: Answer) -> QueryResponse:
         cost_usd=ans.cost_usd,
         tokens=ans.tokens,
         support_fraction=ans.critique.support_fraction if ans.critique else None,
+        reformulations=list(ans.reformulations),
     )
 
 

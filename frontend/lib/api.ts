@@ -50,6 +50,9 @@ export type QueryResponse = {
   cost_usd: number;
   tokens: Record<string, number>;
   support_fraction: number | null;
+  // Broadened queries the self-correction loop retrieved on. Empty when it
+  // accepted the first answer.
+  reformulations: string[];
 };
 
 export async function getConfig(): Promise<{ mode: string; flags: Flags }> {
@@ -89,6 +92,7 @@ export async function streamQuery(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, flags }),
   });
+  if (!r.ok) throw new Error(`API ${r.status}: ${(await r.text()).slice(0, 200)}`);
   if (!r.body) throw new Error("no stream body");
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
@@ -106,6 +110,9 @@ export async function streamQuery(
       const data = JSON.parse(dataLine);
       if (ev === "stage") onStage(data as Stage);
       else if (ev === "answer") onAnswer(data as QueryResponse);
+      // The backend emits `error` when the pipeline raises mid-stream; without
+      // this the UI would sit on a half-filled rail forever.
+      else if (ev === "error") throw new Error(data?.message ?? "pipeline error");
     }
   }
 }

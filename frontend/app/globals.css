@@ -2,15 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * The type inversion is the personality: monospace is the DISPLAY face, because
+ * everything this pipeline says about itself is instrument output — chunk ids
+ * like 01_routing::2, coverage scores, stage timings. Prose gets a plain sans,
+ * so the answer reads as the one human voice on an instrument panel.
+ */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --stamp-in: 340ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body {
-  background: #0f1116;
-  color: #e6e6e6;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #e9edea;
+  color: #111a19;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Faint ruled ground — a measurement surface, not decoration; it is what the
+     verdict rail's ticks align to. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 27px,
+    rgba(17, 26, 25, 0.035) 27px 28px
+  );
+}
+
+/* Keyboard focus stays visible everywhere; the demo is often driven by tab. */
+:where(a, button, input, [tabindex]):focus-visible {
+  outline: 2px solid #1b4b6b;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@keyframes stamp {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.stamp { animation: stamp var(--stamp-in) both; }
+
+/* A stage that is currently running reads as active without a spinner: the rule
+   beneath it sweeps. Quieter than a spinner and it sits in the ruled grid. */
+.running {
+  background-image: linear-gradient(90deg, transparent, rgba(27, 75, 107, 0.55), transparent);
+  background-size: 200% 100%;
+  animation: sweep 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp, .running { animation: none; }
+  .running { background-image: none; background-color: rgba(27, 75, 107, 0.4); }
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: #c4cfc9; border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
