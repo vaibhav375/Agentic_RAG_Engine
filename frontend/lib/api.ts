@@ -65,7 +65,7 @@ export async function getCorpus() {
   return r.json() as Promise<{
     n_docs: number;
     n_chunks: number;
-    docs: { doc_id: string; chunks: number }[];
+    docs: { doc_id: string; title: string; chunks: number; sections: string[] }[];
   }>;
 }
 

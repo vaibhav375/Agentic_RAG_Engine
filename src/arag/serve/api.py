@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -183,12 +184,50 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
 
     @app.get("/corpus")
     def corpus() -> dict:
+        """What the engine knows, down to section headings.
+
+        A visitor cannot tell what is answerable from "39 chunks from 10
+        documents", and this pipeline declines anything outside its corpus — so
+        without a table of contents the honest behaviour reads as brokenness.
+        Section headings double as the vocabulary the answerability gate scores
+        against, which is the practical difference between a question that lands
+        and one that gets declined.
+        """
         comp = base_components()
-        docs: dict[str, int] = {}
+        docs: dict[str, dict] = {}
         for c in comp.store.chunks:
-            docs[c.doc_id] = docs.get(c.doc_id, 0) + 1
+            d = docs.setdefault(
+                c.doc_id,
+                {"doc_id": c.doc_id, "title": (c.metadata or {}).get("title") or c.doc_id,
+                 "chunks": 0, "sections": []},
+            )
+            d["chunks"] += 1
+            if c.section and c.section not in d["sections"]:
+                d["sections"].append(c.section)
+        # Attach a question per document that is known to work, taken from the
+        # graded benchmark. Inventing a phrasing is not safe here: the
+        # answerability gate scores lexical coverage, so "What does the
+        # documentation say about path parameters?" is DECLINED (0.31) — the words
+        # "documentation" and "say" are rare and absent from the corpus, which
+        # drags coverage down. Even bare section names only work about half the
+        # time. Questions whose behaviour has been measured are the honest thing
+        # to offer.
+        try:
+            from eval.build_gold_set import load_gold
+
+            for g in load_gold(cfg.get("eval.gold_path", "data/eval/gold_qa.jsonl")):
+                if g.difficulty.value != "easy":
+                    continue
+                for d in g.supporting_doc_ids or []:
+                    if d in docs and not docs[d].get("example"):
+                        docs[d]["example"] = g.question
+        except Exception as exc:  # the listing is still useful without examples
+            logging.getLogger(__name__).warning(
+                "corpus examples unavailable: %s: %s", type(exc).__name__, exc
+            )
+
         return {"n_docs": len(docs), "n_chunks": len(comp.store.chunks),
-                "docs": [{"doc_id": k, "chunks": v} for k, v in sorted(docs.items())]}
+                "docs": [docs[k] for k in sorted(docs)]}
 
     @app.get("/chunk/{chunk_id}")
     def chunk(chunk_id: str) -> dict:
