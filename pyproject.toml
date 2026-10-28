@@ -39,6 +39,10 @@ store = [
     "qdrant-client>=1.9",
     "redis>=5.0",
 ]
+loadtest = [
+    "locust>=2.43",
+    "redis>=5.0",
+]
 viz = [
     "matplotlib>=3.8",
     "pandas>=2.2",

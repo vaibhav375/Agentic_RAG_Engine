@@ -235,6 +235,19 @@ serve:
   host: 0.0.0.0
   port: 8000
 
+# ----- Load test (loadtest/) -----------------------------------------------
+# `make loadtest` runs every user count twice against POST /query with the Redis
+# semantic cache on: once cold (Redis key flushed) and once warm (filled by the
+# cold run, reloaded from Redis by a fresh server process). Questions are drawn
+# from eval.gold_path.
+loadtest:
+  port: 8765                     # the server the runner starts; not serve.port, so a dev server can stay up
+  users: [1, 10, 50]
+  duration: 2m
+  smoke_users: 10
+  smoke_duration: 20s
+  max_error_rate: 0.01           # locust exits non-zero above this (the CI smoke gate)
+
 # ----- Evaluation ----------------------------------------------------------
 eval:
   gold_path: data/eval/gold_qa.jsonl
