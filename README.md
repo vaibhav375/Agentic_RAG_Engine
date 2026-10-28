@@ -49,6 +49,8 @@ hallucination** vs. a naive RAG baseline through an ablation study.
 > separate "findings" turned out to be paging rather than pipeline behaviour.
 > Quality metrics survive that contamination; timings do not.
 >
+> **Serving load test** (`mock` mode, Redis cache, cached path only): 1,243 req/s at 10 users, p99 12 ms, 0% errors — setup, caveats and the full matrix in [`docs/load-test.md`](docs/load-test.md).
+>
 > **Out-of-sample check.** Every threshold and prompt was tuned against this gold
 > set, so `eval.split` holds out a stratified quarter that nothing was tuned on.
 > The safety guarantees survive it intact — **abstention 1.000 and adversarial
