@@ -104,6 +104,43 @@ jobs:
           echo "::error::Eval regression gate failed — see the Eval Report comment."
           exit 1
 
+  # Load-test smoke: a short run against a real server with the Redis cache on,
+  # failing above loadtest.max_error_rate. The full matrix is `make loadtest`.
+  loadtest-smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install (mock mode + locust)
+        run: pip install -e ".[loadtest]"
+
+      - name: Load-test smoke
+        run: python loadtest/run.py --smoke
+
+      - name: Upload load-test output
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: loadtest-smoke
+          path: loadtest/results/
+          if-no-files-found: warn
+
   # Badge reflects merged main only, so PRs never touch it.
   badge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

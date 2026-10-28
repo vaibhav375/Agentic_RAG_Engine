@@ -5,7 +5,7 @@ PY ?= $(shell command -v python3 2>/dev/null || command -v python)
 CONFIG ?= config/config.yaml
 
 .PHONY: help install install-local install-api lint test ingest serve eval bench ablation clean \
-        docker-up docker-down demo calibrate gate report update-baseline history selective dashboard sweep
+        docker-up docker-down demo calibrate gate report update-baseline history selective dashboard sweep loadtest
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -68,6 +68,9 @@ selective: ## Risk–coverage analysis of the abstention gate
 
 dashboard: ## Generate a self-contained HTML eval dashboard
 	$(PY) -m eval.dashboard $(CONFIG)
+
+loadtest: ## Load test POST /query at each loadtest.users count, Redis cache cold+warm (needs redis-server)
+	$(PY) loadtest/run.py --config $(CONFIG)
 
 bench: ablation ## Alias for ablation
 
