@@ -45,6 +45,18 @@ class QueryUser(HttpUser):
 @events.quitting.add_listener
 def _gate_on_error_rate(environment, **_kw) -> None:
     limit = float(_cfg.get("loadtest.max_error_rate", 0.01))
-    ratio = environment.stats.total.fail_ratio
+    total = environment.stats.total
+    ratio = total.fail_ratio
+    # Locust's --csv files are periodic snapshots; the last one can be up to a
+    # second short of the run (measured: 23,009 of 23,893 requests). Write the
+    # final totals — the numbers the printed summary shows — next to them.
+    prefix = getattr(environment.parsed_options, "csv_prefix", None)
+    if prefix:
+        Path(f"{prefix}_final.json").write_text(json.dumps({
+            "requests": total.num_requests,
+            "failures": total.num_failures,
+            "rps": total.total_rps,
+            **{f"p{p}_ms": total.get_response_time_percentile(p / 100) for p in (50, 95, 99)},
+        }))
     environment.process_exit_code = 1 if ratio > limit else 0
     print(f"error rate {ratio:.4%} (limit {limit:.2%}) -> exit {environment.process_exit_code}")

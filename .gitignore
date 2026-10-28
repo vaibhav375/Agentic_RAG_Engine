@@ -47,3 +47,6 @@ PROJECT_3_RLVR_Reasoning_Engine.md
 .vscode/
 .pytest_cache/
 .ruff_cache/
+
+# Load-test smoke output (CI makes its own); the full-matrix CSVs are committed
+loadtest/results/smoke_*
