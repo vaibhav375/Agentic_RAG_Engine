@@ -21,6 +21,9 @@ dependencies = [
     "tenacity>=8.2",
     "typer>=0.12",
     "rich>=13.7",
+    # GraphQL at /graphql. No [fastapi] extra: it only adds python-multipart,
+    # which Strawberry needs for file uploads, and those are off.
+    "strawberry-graphql>=0.339",
 ]
 
 [project.optional-dependencies]

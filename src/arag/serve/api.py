@@ -8,6 +8,7 @@
     GET  /corpus          -> documents + chunk counts
     GET  /chunk/{id}      -> a single chunk (for clickable citations)
     GET  /eval/{name}     -> eval artifacts (ablation|selective|history|calibration|gold)
+    /graphql              -> GraphQL: ask, health, documents (same query path as POST /query)
 
 Per-request `flags` let the UI toggle pipeline components live (hybrid, rerank,
 HyDE, MMR, decompose, agent, CRAG, router, cache) on the already-loaded index —
@@ -30,6 +31,7 @@ from pydantic import BaseModel
 from arag.common.config import load_config
 from arag.common.schemas import Answer
 from arag.engine import Components, answer_query, build_components
+from arag.serve.gql import graphql_router
 
 # Flags that only change online pipeline behavior (safe to toggle per-request on
 # the same index). Chunking/embedding changes are excluded — they need re-ingest.
@@ -165,6 +167,18 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
         """The one query path every API surface calls (REST /query, GraphQL ask)."""
         return _answer_to_response(answer_query(components_for(flags), query))
 
+    def health_status() -> str:
+        return "ok" if state.get("components") is not None else "starting"
+
+    app.include_router(
+        graphql_router({
+            "run_query": run_query,
+            "health": health_status,
+            "list_documents": lambda: list_documents(base_components().store),
+        }),
+        prefix="/graphql",
+    )
+
     @app.on_event("startup")
     def _startup() -> None:
         base_components()
@@ -185,7 +199,7 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
     def health() -> dict:
         comp = state.get("components")
         return {
-            "status": "ok" if comp is not None else "starting",
+            "status": health_status(),
             "mode": cfg.get("mode"),
             "index": comp.store.meta if comp else None,
         }
