@@ -104,6 +104,22 @@ def _answer_to_response(ans: Answer) -> QueryResponse:
     )
 
 
+def list_documents(store) -> dict[str, dict]:
+    """Indexed documents keyed by doc_id, with title, chunk count and sections.
+    Shared by REST /corpus and GraphQL `documents`."""
+    docs: dict[str, dict] = {}
+    for c in store.chunks:
+        d = docs.setdefault(
+            c.doc_id,
+            {"doc_id": c.doc_id, "title": (c.metadata or {}).get("title") or c.doc_id,
+             "chunks": 0, "sections": []},
+        )
+        d["chunks"] += 1
+        if c.section and c.section not in d["sections"]:
+            d["sections"].append(c.section)
+    return docs
+
+
 def create_app(config_path: str = "config/config.yaml") -> FastAPI:
     cfg = load_config(os.environ.get("ARAG_CONFIG", config_path))
     app = FastAPI(title="Agentic RAG Engine", version="0.1.0")
@@ -144,6 +160,10 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
             overrides.setdefault("agent.critic", "both")
         variant_cfg = cfg.with_overrides(overrides)
         return build_components(variant_cfg, store=base.store)
+
+    def run_query(query: str, flags: dict[str, bool] | None = None) -> QueryResponse:
+        """The one query path every API surface calls (REST /query, GraphQL ask)."""
+        return _answer_to_response(answer_query(components_for(flags), query))
 
     @app.on_event("startup")
     def _startup() -> None:
@@ -194,16 +214,7 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
         and one that gets declined.
         """
         comp = base_components()
-        docs: dict[str, dict] = {}
-        for c in comp.store.chunks:
-            d = docs.setdefault(
-                c.doc_id,
-                {"doc_id": c.doc_id, "title": (c.metadata or {}).get("title") or c.doc_id,
-                 "chunks": 0, "sections": []},
-            )
-            d["chunks"] += 1
-            if c.section and c.section not in d["sections"]:
-                d["sections"].append(c.section)
+        docs = list_documents(comp.store)
         # Attach a question per document that is known to work, taken from the
         # graded benchmark. Inventing a phrasing is not safe here: the
         # answerability gate scores lexical coverage, so "What does the
@@ -260,8 +271,7 @@ def create_app(config_path: str = "config/config.yaml") -> FastAPI:
 
     @app.post("/query", response_model=QueryResponse)
     def query(req: QueryRequest) -> QueryResponse:
-        comp = components_for(req.flags)
-        return _answer_to_response(answer_query(comp, req.query))
+        return run_query(req.query, req.flags)
 
     @app.post("/query/stream")
     async def query_stream(req: QueryRequest):
