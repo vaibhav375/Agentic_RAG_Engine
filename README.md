@@ -158,7 +158,7 @@ src/arag/
   generate/   grounded answer + citations · prompts
   agent/      critic (LLM+NLI) · retrieval_grader (CRAG) · reformulate · router · graph
   cache/      semantic_cache (memory + redis, false-hit guarded)
-  serve/      FastAPI api (/query, /health, /stats)
+  serve/      FastAPI api (/query, /health, /stats) + GraphQL (/graphql)
   engine.py   builds components + the single answer_query() entrypoint
   cli.py      arag ingest | query | serve | eval | calibrate-judge | history
 eval/
@@ -196,6 +196,48 @@ make serve             # http://localhost:8000  (mock mode)
 curl -s localhost:8000/health
 curl -s localhost:8000/query -H 'content-type: application/json' \
      -d '{"query":"What is the default GZip minimum size?"}' | jq
+```
+
+### GraphQL API
+
+`make serve` also serves GraphQL at <http://localhost:8000/graphql> (GraphiQL in
+the browser). It calls the same query path as `POST /query`, so both return the
+same answer and citations. The schema has three fields:
+
+- `ask(question: String!)`: the answer, its `citations { source snippet }`,
+  `declined`, and the per-stage `trace { stage latencyMs }`. `source` is the
+  document id. `declined` is the REST `abstained` field.
+- `health`: `"ok"` once the index is loaded.
+- `documents(limit: Int = 20)`: `id` and `title` of the indexed documents.
+
+There is no per-request `flags` argument. GraphQL uses the server's config.
+
+```bash
+curl -s localhost:8000/graphql -H 'content-type: application/json' -d '{"query":
+  "{ ask(question: \"What is the default GZip minimum size?\") { answer declined citations { source snippet } trace { stage latencyMs } } }"}' | jq
+```
+
+Response in mock mode (latencies vary per run):
+
+```json
+{
+  "data": {
+    "ask": {
+      "answer": "Breeze ships with three middleware classes. `CORSMiddleware` adds cross-origin\nheaders. `GZipMiddleware` compresses responses larger than a configurable\n`minimum_size`, which defaults to 500 bytes. `TrustedHostMiddleware` rejects\nrequests whose `Host` header is not in an allowed list, returning a 400 response.",
+      "declined": false,
+      "citations": [
+        {
+          "source": "05_middleware",
+          "snippet": "Breeze ships with three middleware classes. `CORSMiddleware` adds cross-origin headers. `GZipMiddleware` compresses responses larger than a configurable `minimu…"
+        }
+      ],
+      "trace": [
+        { "stage": "retrieve", "latencyMs": 1.22 },
+        { "stage": "generate", "latencyMs": 0.16 }
+      ]
+    }
+  }
+}
 ```
 
 ### 3a. Playground — zero dependencies
