@@ -177,6 +177,20 @@ def _selective_section(sel: dict | None) -> str:
     if not sel:
         return ""
     plot = f"\n![Risk-coverage curve]({sel['plot']})\n" if sel.get("plot") else ""
+    safe, answerable = sel["max_safe_coverage"], sel["answerable_fraction"]
+    if abs(safe - answerable) < 0.005:
+        coverage_line = (
+            f"- **Max coverage at zero risk = {safe:.3f}**, equal to the answerable "
+            f"fraction ({answerable:.3f}) — i.e. the gate can answer *every* answerable "
+            "question without answering a single out-of-scope one.\n"
+        )
+    else:
+        coverage_line = (
+            f"- **Max coverage at zero risk = {safe:.3f}**, below the answerable "
+            f"fraction ({answerable:.3f}) — the gate's confidence ranks some out-of-scope "
+            "questions above some answerable ones, so answering every answerable question "
+            "means accepting some out-of-scope risk.\n"
+        )
     return (
         "\n## Selective prediction (risk–coverage of the abstention gate)\n\n"
         "Sweeping the answer/abstain confidence traces how risk grows as the system "
@@ -184,9 +198,7 @@ def _selective_section(sel: dict | None) -> str:
         "fraction of questions that are actually answerable.\n\n"
         f"- Risk–coverage **AUC = {sel['risk_coverage_auc']:.3f}** (lower is better; "
         "a random confidence signal scores ≈ the base risk).\n"
-        f"- **Max coverage at zero risk = {sel['max_safe_coverage']:.3f}**, equal to the "
-        f"answerable fraction ({sel['answerable_fraction']:.3f}) — i.e. the gate can answer "
-        "*every* answerable question without answering a single out-of-scope one.\n"
+        f"{coverage_line}"
         f"- Risk at full coverage (answer everything) = {sel['risk_at_full_coverage']:.3f}.\n"
         f"{plot}"
     )
