@@ -17,18 +17,26 @@ harness** that measures faithfulness, answer relevance, context precision/recall
 and an explicit **hallucination rate**, and proves a **measured reduction in
 hallucination** vs. a naive RAG baseline through an ablation study.
 
-> **Headline (reproducible, `mock` mode):** hallucination rate **31.2% → 0.9%**
-> (95% CI [0.0%, 2.8%]), correct abstention on unanswerable questions
-> **0% → 91.7%**, and adversarial / prompt-injection robustness **0% → 100%**
-> across the ablation, on a **109-question** technical-docs benchmark
-> (easy · multi-hop · unanswerable · adversarial). Run `make ablation` to
-> regenerate [`RESULTS.md`](RESULTS.md).
+> **Headline (reproducible, `mock` mode):** hallucination rate **31.6% → 0.9%**
+> (95% CI [0.0%, 2.6%]), correct abstention on unanswerable questions
+> **0% → 91.7%** (11/12), and adversarial / prompt-injection robustness
+> **0% → 88.9%** (16/18) across the ablation, on a **117-question**
+> technical-docs benchmark (74 easy · 13 multi-hop · 12 unanswerable ·
+> 18 adversarial). Run `make ingest && make ablation` to regenerate
+> [`RESULTS.md`](RESULTS.md).
+>
+> `mock` mode swaps every model for a deterministic stand-in, so these numbers
+> test the pipeline's logic (does the gate decline, does the critic catch an
+> unsupported claim), not model quality. The real-model numbers below are the
+> ones to lead with.
 >
 > These numbers were **0.0% and 100%** on the original 62-question set. Growing
-> the set to 109 exposed two genuine residual failures — the perfect scores were
-> partly an artifact of a small benchmark that the thresholds had been tuned
-> against. The larger set is the honest one, and its confidence interval is
-> narrow enough to mean something.
+> the set to 117 exposed genuine residual failures: one out-of-scope question
+> the CRAG gate lets through, and two adversarial false-premise questions the
+> mock pipeline does not refute. The perfect scores were partly an artifact of
+> a small benchmark that the thresholds had been tuned against. The larger set
+> is the honest one, and its confidence interval is narrow enough to mean
+> something.
 >
 > **And on real open-weight models** (`qwen2.5:3b` + `bge-small`, **117**
 > questions, no API keys): hallucination **0.85%** (95% CI [0%, 2.6%]) — **1 of
@@ -85,8 +93,11 @@ engineer is expected to know:
   embed a hypothetical answer; split multi-hop questions into sub-questions
   fused with RRF; and Maximal Marginal Relevance to diversify the final context.
 - **Selective-prediction risk–coverage analysis** — evaluates the abstention gate
-  with a risk–coverage curve + AUC; the CRAG signal reaches **max safe coverage =
-  the answerable fraction** (answer every in-scope question at zero out-of-scope risk).
+  with a risk–coverage curve + AUC (0.052 in `mock` mode). At zero out-of-scope
+  risk the gate can answer **40%** of questions, against an answerable fraction
+  of 74%: its confidence does not yet rank every in-scope question above every
+  out-of-scope one, so the curve shows how much risk each extra point of
+  coverage costs.
 - **Prompt-injection input guardrail** — an explicit defense-in-depth layer that
   flags injection/jailbreak/exfiltration/false-premise inputs.
 - **Query router / complexity classifier** — cheap queries skip the expensive
@@ -112,7 +123,7 @@ Flip `config.mode` to `local` (sentence-transformers + Ollama) or `api`
 
 ```bash
 make install     # core deps only; mock mode works immediately
-make test        # 182 unit + integration tests, no network
+make test        # 190 unit + integration tests, no network
 make demo        # ingest the corpus + answer one query
 make ablation    # full ablation study -> RESULTS.md
 ```
@@ -376,7 +387,7 @@ of a blended score that hides it.
 at 1.000 on a corpus this size — every ranking change looks like a no-op, which
 is a benchmark that can't grade the thing it's measuring. `recall@1` / `recall@3`
 (`eval.strict_ks`) sit next to it and do show the work: the hybrid row moves
-recall@1 0.854 → 0.917 where `recall@k` showed a flat 1.000. They're also what
+recall@1 0.833 → 0.937 where `recall@k` showed a flat 1.000. They're also what
 makes reranking's *cost* visible (see `RESULTS.md`) instead of invisible.
 
 The gold set is hand-built with **easy, multi-hop, and unanswerable** questions;
@@ -452,9 +463,11 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
 
 - Built a self-correcting agentic RAG engine (Corrective-RAG answerability gate +
   NLI-cross-checked LLM-as-judge critic) that re-issues its own retrievals or
-  abstains, cutting hallucination from **31.2%** to **0.9%**
-  (95% CI [0.0%, 2.8%]) and reaching **91.7%** correct abstention
-  and **100%** prompt-injection robustness on a 109-question benchmark.
+  abstains, cutting hallucination from **31.6%** to **0.9%**
+  (95% CI [0.0%, 2.6%]) and reaching **91.7%** correct abstention
+  and **88.9%** prompt-injection robustness on a 117-question benchmark
+  (`mock` mode; on `qwen2.5:3b` + `bge-small`: 0.85% hallucination, 100%
+  abstention, 100% adversarial robustness).
 - Implemented hybrid dense + sparse (BM25 + RRF) retrieval with cross-encoder
   reranking, HyDE, and multi-hop query decomposition, served behind FastAPI with
   a semantic cache and a full Dockerized stack.
@@ -502,7 +515,7 @@ make dashboard     # self-contained HTML eval dashboard (open in a browser)
 - Mock embeddings are lexical, so hybrid/rerank precision gains are muted vs.
   neural embeddings — see the note in `RESULTS.md`.
 - **Reranking measurably costs ranking quality in `mock` mode** (recall@1
-  0.917 → 0.833): a lexical stand-in reranker carries less signal than the
+  0.937 → 0.856): a lexical stand-in reranker carries less signal than the
   dense+sparse fusion it overwrites. `retrieval.rerank_fusion: rrf` fuses the two
   rankings and recovers it fully, but shifts the generator's context enough to
   degrade the CRAG gate (hallucination 0.000 → 0.032), so `replace` stays the
