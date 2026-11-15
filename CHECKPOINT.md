@@ -1,5 +1,26 @@
 # Checkpoint
 
+## 2026-11-12 — README and RESULTS.md brought in line
+
+Done:
+- Regenerated `RESULTS.md` from a clean clone of main (`make ingest && make
+  ablation`, mock mode). Dense baseline is now 31.6% hallucination (was 32.5%);
+  full pipeline unchanged at 0.9% (CI 0.0–2.6%), 91.7% abstention, 88.9%
+  adversarial. Identical on Python 3.11 and 3.13; only p95 latency varies.
+- `eval/report.py`: calibration is read from `claim_support` (a fresh run
+  printed a 0-example set); the zero-risk-coverage sentence is worded from
+  the numbers instead of always saying "equal to the answerable fraction".
+- README headline, resume bullets, selective-prediction claim, recall@1
+  figures and test count (190) match `RESULTS.md`.
+
+Open:
+- `eval/results/ci_baseline.json` predates these numbers (recall@1 0.879 vs
+  0.856 now). The gate still passes inside its 0.05 tolerance, which is why
+  nobody noticed. Refresh it with `python -m eval.ci_gate --update-baseline`
+  if that drift is intended.
+- Not found: which change moved the baseline from 32.5% to 31.6%.
+  `eval/results/*.json` is gitignored, so the old run cannot be compared.
+
 ## 2026-11-03 — GraphQL API
 
 Done:
