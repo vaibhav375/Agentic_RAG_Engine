@@ -154,9 +154,13 @@ def _try_plot(results: list[dict], out_dir: Path) -> str | None:
 def _calibration_section(calibration: dict | None) -> str:
     if not calibration:
         return ""
-    llm = calibration.get("llm_judge", {})
-    nli = calibration.get("nli_judge", {})
-    n_fail = len(calibration.get("llm_disagreements", []))
+    # calibrate_judge nests the claim-support results under "claim_support"
+    # (answer_equivalence is a separate task); older outputs were flat.
+    support = calibration.get("claim_support", calibration)
+    llm = support.get("llm_judge", {})
+    nli = support.get("nli_judge", {})
+    n_fail = sum(1 for d in calibration.get("llm_disagreements", [])
+                 if d.get("task", "claim_support") == "claim_support")
     return (
         "\n## Judge calibration (trust the grader)\n\n"
         f"The critic is validated against a {llm.get('n', 0)}-example human-labeled set of "
